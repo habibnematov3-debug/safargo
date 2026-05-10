@@ -1,0 +1,432 @@
+import { supabase } from './supabase';
+import type {
+  DriverApplication,
+  DriverBadge,
+  DriverProfile,
+  PassengerPreference,
+  PassengerRequest,
+  UserLocation,
+  UserRole,
+} from '../types/safargo';
+import type { TelegramUser } from './telegram';
+
+const PASSENGER_PREFERENCES: PassengerPreference[] = [
+  'front_seat',
+  'non_smoking',
+  'clean_car',
+  'women_only',
+];
+
+const DRIVER_BADGES: DriverBadge[] = ['verified', 'clean', 'on_time'];
+const DRIVER_WINDOWS: DriverApplication['departureWindow'][] = ['Hozir', '30 daqiqada', '1 soatda', '2 soatda'];
+
+type DbPassengerRequest = {
+  id: string;
+  passenger_id: string;
+  passenger_name: string;
+  origin_region_id: string;
+  origin_district_id: string;
+  origin_label: string;
+  destination_region_id: string;
+  date_iso: string;
+  time_approx: string;
+  seats: number;
+  preferences: string[] | null;
+  status: 'active' | 'confirmed' | 'cancelled' | 'completed';
+  selected_driver_id: string | null;
+  created_at: string;
+};
+
+type DbDriverApplication = {
+  id: string;
+  request_id: string;
+  driver_id: string;
+  price_per_seat: number;
+  departure_window: string;
+  note: string | null;
+  created_at: string;
+};
+
+type DbDriverProfile = {
+  id: string;
+  car_model: string | null;
+  car_year: number | null;
+  phone: string | null;
+  is_verified: boolean | null;
+  is_premium: boolean | null;
+  rating_avg: number | string | null;
+  rating_trips: number | null;
+  badges: string[] | null;
+};
+
+type DbUserRow = {
+  id: string;
+  name: string;
+  driver_profiles: DbDriverProfile | DbDriverProfile[] | null;
+};
+
+const toPassengerPreferences = (values: string[] | null): PassengerPreference[] =>
+  (values ?? []).filter((item): item is PassengerPreference =>
+    PASSENGER_PREFERENCES.includes(item as PassengerPreference),
+  );
+
+const toDriverBadges = (values: string[] | null, isVerified: boolean): DriverBadge[] => {
+  const badges = (values ?? []).filter((item): item is DriverBadge => DRIVER_BADGES.includes(item as DriverBadge));
+
+  if (isVerified && !badges.includes('verified')) {
+    badges.unshift('verified');
+  }
+
+  return badges;
+};
+
+const toDepartureWindow = (value: string): DriverApplication['departureWindow'] => {
+  if (DRIVER_WINDOWS.includes(value as DriverApplication['departureWindow'])) {
+    return value as DriverApplication['departureWindow'];
+  }
+
+  return 'Hozir';
+};
+
+const getProfile = (profile: DbDriverProfile | DbDriverProfile[] | null): DbDriverProfile | null => {
+  if (Array.isArray(profile)) {
+    return profile[0] ?? null;
+  }
+
+  return profile;
+};
+
+const toNumber = (value: string | number | null | undefined, fallback = 0): number => {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  return fallback;
+};
+
+const buildInitials = (name: string): string =>
+  name
+    .split(' ')
+    .map((part) => part.trim()[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase() || 'SF';
+
+const toDriverProfile = (user: DbUserRow): DriverProfile => {
+  const profile = getProfile(user.driver_profiles);
+  const isVerified = Boolean(profile?.is_verified);
+
+  return {
+    id: user.id,
+    name: user.name,
+    initials: buildInitials(user.name),
+    carModel: profile?.car_model ?? 'Mashina ko\'rsatilmagan',
+    carYear: profile?.car_year ?? 2020,
+    phone: profile?.phone ?? '+998 90 000 00 00',
+    badges: toDriverBadges(profile?.badges ?? [], isVerified),
+    rating: {
+      avg: toNumber(profile?.rating_avg, 0),
+      trips: profile?.rating_trips ?? 0,
+    },
+    isPremium: Boolean(profile?.is_premium),
+  };
+};
+
+const toPassengerRequest = (
+  row: DbPassengerRequest,
+  applicants: DriverApplication[],
+): PassengerRequest => ({
+  id: row.id,
+  passengerName: row.passenger_name,
+  origin: {
+    regionId: row.origin_region_id as UserLocation['regionId'],
+    districtId: row.origin_district_id,
+    labelUz: row.origin_label,
+    source: 'manual',
+  },
+  destinationRegionId: row.destination_region_id as UserLocation['regionId'],
+  dateISO: row.date_iso,
+  timeApprox: row.time_approx,
+  seats: row.seats,
+  preferences: toPassengerPreferences(row.preferences),
+  applicants,
+  status: row.status,
+  selectedDriverId: row.selected_driver_id ?? undefined,
+});
+
+export const saveUser = async (
+  telegramUser: TelegramUser | undefined,
+  role: UserRole | undefined,
+  location: UserLocation | undefined,
+): Promise<{ id: string; name: string }> => {
+  const id = String(telegramUser?.id ?? 'dev-user-123');
+  const name = telegramUser?.first_name ?? telegramUser?.username ?? 'Foydalanuvchi';
+
+  const { error } = await supabase.from('users').upsert({
+    id,
+    name,
+    role: role ?? null,
+    region_id: location?.regionId ?? null,
+    district_id: location?.districtId ?? null,
+    district_label: location?.labelUz ?? null,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return { id, name };
+};
+
+export const saveDriverProfile = async (
+  userId: string,
+  carModel: string,
+  carYear: number,
+  phone: string,
+): Promise<void> => {
+  const { error } = await supabase.from('driver_profiles').upsert({
+    id: userId,
+    car_model: carModel,
+    car_year: carYear,
+    phone,
+  });
+
+  if (error) {
+    throw error;
+  }
+};
+
+export const createRequest = async (data: {
+  passengerId: string;
+  passengerName: string;
+  origin: UserLocation;
+  destinationRegionId: PassengerRequest['destinationRegionId'];
+  dateISO: string;
+  timeApprox: string;
+  seats: number;
+  preferences: PassengerPreference[];
+}): Promise<PassengerRequest> => {
+  const payload = {
+    passenger_id: data.passengerId,
+    passenger_name: data.passengerName,
+    origin_region_id: data.origin.regionId,
+    origin_district_id: data.origin.districtId,
+    origin_label: data.origin.labelUz,
+    destination_region_id: data.destinationRegionId,
+    date_iso: data.dateISO,
+    time_approx: data.timeApprox,
+    seats: data.seats,
+    preferences: data.preferences,
+    status: 'active' as const,
+  };
+
+  const { data: row, error } = await supabase
+    .from('passenger_requests')
+    .insert(payload)
+    .select('*')
+    .single<DbPassengerRequest>();
+
+  if (error || !row) {
+    throw error ?? new Error('Request yaratilmadi');
+  }
+
+  return toPassengerRequest(row, []);
+};
+
+export const getMatchingRequests = async (districtId: string): Promise<PassengerRequest[]> => {
+  const { data, error } = await supabase
+    .from('passenger_requests')
+    .select('*')
+    .eq('origin_district_id', districtId)
+    .eq('status', 'active')
+    .order('created_at', { ascending: false })
+    .returns<DbPassengerRequest[]>();
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []).map((row) => toPassengerRequest(row, []));
+};
+
+export const applyToRequest = async (
+  requestId: string,
+  driverApplication: {
+    driverId: string;
+    pricePerSeat: number;
+    departureWindow: DriverApplication['departureWindow'];
+    note?: string;
+  },
+): Promise<void> => {
+  const { error } = await supabase.from('driver_applications').upsert(
+    {
+      request_id: requestId,
+      driver_id: driverApplication.driverId,
+      price_per_seat: driverApplication.pricePerSeat,
+      departure_window: driverApplication.departureWindow,
+      note: driverApplication.note ?? null,
+    },
+    { onConflict: 'request_id,driver_id' },
+  );
+
+  if (error) {
+    throw error;
+  }
+};
+
+export const getMyRequests = async (
+  passengerId: string,
+): Promise<{ requests: PassengerRequest[]; drivers: DriverProfile[] }> => {
+  const { data: requestRows, error: requestsError } = await supabase
+    .from('passenger_requests')
+    .select('*')
+    .eq('passenger_id', passengerId)
+    .order('created_at', { ascending: false })
+    .returns<DbPassengerRequest[]>();
+
+  if (requestsError) {
+    throw requestsError;
+  }
+
+  const requests = requestRows ?? [];
+  const requestIds = requests.map((request) => request.id);
+
+  if (requestIds.length === 0) {
+    return { requests: [], drivers: [] };
+  }
+
+  const { data: applicationRows, error: appsError } = await supabase
+    .from('driver_applications')
+    .select('*')
+    .in('request_id', requestIds)
+    .order('created_at', { ascending: false })
+    .returns<DbDriverApplication[]>();
+
+  if (appsError) {
+    throw appsError;
+  }
+
+  const applications = applicationRows ?? [];
+  const driverIds = Array.from(new Set(applications.map((application) => application.driver_id)));
+
+  let drivers: DriverProfile[] = [];
+  if (driverIds.length > 0) {
+    const { data: userRows, error: usersError } = await supabase
+      .from('users')
+      .select('id,name,driver_profiles(id,car_model,car_year,phone,is_verified,is_premium,rating_avg,rating_trips,badges)')
+      .in('id', driverIds)
+      .returns<DbUserRow[]>();
+
+    if (usersError) {
+      throw usersError;
+    }
+
+    drivers = (userRows ?? []).map(toDriverProfile);
+  }
+
+  const applicationsByRequest = new Map<string, DriverApplication[]>();
+  applications.forEach((application) => {
+    const bucket = applicationsByRequest.get(application.request_id) ?? [];
+    bucket.push({
+      id: application.id,
+      driverId: application.driver_id,
+      pricePerSeat: application.price_per_seat,
+      departureWindow: toDepartureWindow(application.departure_window),
+      note: application.note ?? undefined,
+    });
+    applicationsByRequest.set(application.request_id, bucket);
+  });
+
+  return {
+    requests: requests.map((row) => toPassengerRequest(row, applicationsByRequest.get(row.id) ?? [])),
+    drivers,
+  };
+};
+
+export const selectDriver = async (requestId: string, driverId: string): Promise<void> => {
+  const { error } = await supabase
+    .from('passenger_requests')
+    .update({ status: 'confirmed', selected_driver_id: driverId })
+    .eq('id', requestId);
+
+  if (error) {
+    throw error;
+  }
+};
+
+export const completeRequest = async (requestId: string): Promise<void> => {
+  const { error } = await supabase
+    .from('passenger_requests')
+    .update({ status: 'completed' })
+    .eq('id', requestId);
+
+  if (error) {
+    throw error;
+  }
+};
+
+export const submitRating = async (rating: {
+  requestId: string;
+  driverId: string;
+  passengerId: string;
+  stars: number;
+}): Promise<void> => {
+  const { error: ratingError } = await supabase.from('ratings').insert({
+    request_id: rating.requestId,
+    driver_id: rating.driverId,
+    passenger_id: rating.passengerId,
+    stars: rating.stars,
+    on_time: rating.stars,
+    car: rating.stars,
+    manners: rating.stars,
+  });
+
+  if (ratingError) {
+    throw ratingError;
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from('driver_profiles')
+    .select('rating_avg,rating_trips')
+    .eq('id', rating.driverId)
+    .single<{ rating_avg: number | string | null; rating_trips: number | null }>();
+
+  if (profileError && profileError.code !== 'PGRST116') {
+    throw profileError;
+  }
+
+  const trips = (profile?.rating_trips ?? 0) + 1;
+  const currentAvg = toNumber(profile?.rating_avg, 0);
+  const avg = Number(((currentAvg * (trips - 1) + rating.stars) / trips).toFixed(1));
+
+  const { error: updateError } = await supabase.from('driver_profiles').upsert({
+    id: rating.driverId,
+    rating_avg: avg,
+    rating_trips: trips,
+  });
+
+  if (updateError) {
+    throw updateError;
+  }
+};
+
+export const getDriverProfile = async (driverId: string): Promise<DriverProfile | null> => {
+  const { data, error } = await supabase
+    .from('users')
+    .select('id,name,driver_profiles(id,car_model,car_year,phone,is_verified,is_premium,rating_avg,rating_trips,badges)')
+    .eq('id', driverId)
+    .maybeSingle<DbUserRow>();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return toDriverProfile(data);
+};
