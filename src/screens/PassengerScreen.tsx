@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ArrowLeft, Check, Star } from 'lucide-react';
+import { ArrowLeft, Star } from 'lucide-react';
 import { regions } from '../data/locations';
 import { hapticSuccess } from '../lib/telegram';
 import { regionDefaults, useSafargoStore } from '../store/useSafargoStore';

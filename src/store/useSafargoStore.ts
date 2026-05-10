@@ -79,7 +79,7 @@ type SafargoState = {
   rejectIncomingRequest: (requestId: string) => void;
 };
 
-export const useSafargoStore = create<SafargoState>((set, get) => ({
+export const useSafargoStore = create<SafargoState>((set) => ({
   location: undefined,
   confirmedLocation: false,
   passengerRequests: [
