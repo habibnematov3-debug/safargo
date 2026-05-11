@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { LogOut, MapPin, Settings } from 'lucide-react';
 import { getPassengerStats, getDriverStats, updateUserRole, saveDriverProfile } from '../lib/api';
 import { getTelegramIdentity, hapticSuccess } from '../lib/telegram';
 import { useSafargoStore } from '../store/useSafargoStore';
 import { getRegionLabel } from '../data/locations';
-import type { UserRole } from '../types/safargo';
+import type { UserRole, UserLocation } from '../types/safargo';
 import { Button, Card, Pill, Spinner } from '../components/ui';
+
+type CurrentUser = {
+  id: string;
+  name: string;
+};
 
 const carModels = ['Cobalt', 'Nexia 3', 'Gentra', 'Lacetti', 'Onix', 'Monza', 'Spark', 'Matiz', 'Damas', 'Boshqa'];
 
@@ -30,8 +34,6 @@ export const ProfileScreen = () => {
   const currentUser = useSafargoStore((state) => state.currentUser);
   const setRole = useSafargoStore((state) => state.setRole);
   const identity = useMemo(() => getTelegramIdentity(), []);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
 
   if (!role) {
     return null;
@@ -50,26 +52,19 @@ const PassengerProfile = ({
   currentUser,
   setRole,
 }: {
-  identity: ReturnType<typeof getTelegramIdentity>;
-  location: ReturnType<typeof useSafargoStore> extends { location: infer L } ? L : never;
-  currentUser: ReturnType<typeof useSafargoStore> extends { currentUser: infer U } ? U : never;
+  identity: { id: string; name: string; user?: any };
+  location?: UserLocation;
+  currentUser?: CurrentUser;
   setRole: (role: UserRole) => Promise<void>;
 }) => {
   const [stats, setStats] = useState<{ total: number; completed: number; rated: number } | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
 
   const loadStats = useCallback(async () => {
-    setIsLoading(true);
-    setError('');
     try {
       const data = await getPassengerStats(identity.id);
       setStats(data);
     } catch (err) {
       console.error('Failed to load passenger stats:', err);
-      setError("Xatolik. Qayta urinib ko'ring.");
-    } finally {
-      setIsLoading(false);
     }
   }, [identity.id]);
 
@@ -79,7 +74,7 @@ const PassengerProfile = ({
 
   const initials = currentUser?.name
     ?.split(' ')
-    .map((part) => part.trim()[0])
+    .map((part: string) => part.trim()[0])
     .filter(Boolean)
     .slice(0, 2)
     .join('')
@@ -98,7 +93,7 @@ const PassengerProfile = ({
           </div>
           <div className="flex-1">
             <h2 className="text-xl font-extrabold">{currentUser?.name ?? 'Foydalanuvchi'}</h2>
-            <Pill tone="blue" className="mt-1 w-fit">
+            <Pill tone="blue">
               Yo'lovchi
             </Pill>
             <p className="mt-2 text-xs font-bold text-slate-500">
@@ -131,7 +126,7 @@ const PassengerProfile = ({
             icon="🔄"
             label="Rolni o'zgartirish"
             onTap={async () => {
-              const confirmed = window.confirm('Haydovchiga o'tmoqchimisiz?');
+              const confirmed = window.confirm("Haydovchiga o'tmoqchimisiz?");
               if (confirmed) {
                 try {
                   await updateUserRole(identity.id, 'driver');
@@ -167,9 +162,9 @@ const DriverProfile = ({
   currentUser,
   setRole,
 }: {
-  identity: ReturnType<typeof getTelegramIdentity>;
-  location: ReturnType<typeof useSafargoStore> extends { location: infer L } ? L : never;
-  currentUser: ReturnType<typeof useSafargoStore> extends { currentUser: infer U } ? U : never;
+  identity: { id: string; name: string; user?: any };
+  location?: UserLocation;
+  currentUser?: CurrentUser;
   setRole: (role: UserRole) => Promise<void>;
 }) => {
   const [stats, setStats] = useState<{
@@ -183,17 +178,14 @@ const DriverProfile = ({
   const [isLoading, setIsLoading] = useState(true);
   const [showEditSheet, setShowEditSheet] = useState(false);
   const [editData, setEditData] = useState({ carModel: '', carYear: '', phone: '' });
-  const [error, setError] = useState('');
 
   const loadStats = useCallback(async () => {
     setIsLoading(true);
-    setError('');
     try {
       const data = await getDriverStats(identity.id);
       setStats(data);
     } catch (err) {
       console.error('Failed to load driver stats:', err);
-      setError("Xatolik. Qayta urinib ko'ring.");
     } finally {
       setIsLoading(false);
     }
@@ -212,13 +204,12 @@ const DriverProfile = ({
       hapticSuccess();
     } catch (err) {
       console.error('Failed to save profile:', err);
-      setError('Profilni saqlashda xatolik');
     }
   };
 
   const initials = currentUser?.name
     ?.split(' ')
-    .map((part) => part.trim()[0])
+    .map((part: string) => part.trim()[0])
     .filter(Boolean)
     .slice(0, 2)
     .join('')
@@ -248,7 +239,7 @@ const DriverProfile = ({
           </div>
           <div className="flex-1">
             <h2 className="text-xl font-extrabold">{currentUser?.name ?? 'Foydalanuvchi'}</h2>
-            <Pill tone="green" className="mt-1 w-fit">
+            <Pill tone="green">
               Haydovchi
             </Pill>
             <p className="mt-2 text-xs font-bold text-slate-500">

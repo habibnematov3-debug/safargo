@@ -4,10 +4,11 @@ import { DriverScreen } from './screens/DriverScreen';
 import { PassengerScreen } from './screens/PassengerScreen';
 import { OrdersScreen } from './screens/OrdersScreen';
 import { RatingScreen } from './screens/RatingScreen';
+import { ProfileScreen } from './screens/ProfileScreen';
 import { useSafargoStore } from './store/useSafargoStore';
 import { hapticTap, initTelegram, getTelegramIdentity } from './lib/telegram';
 import { getPendingRatings, saveUser } from './lib/api';
-import { Card, Spinner } from './components/ui';
+import { Spinner } from './components/ui';
 import type { TabKey } from './types/safargo';
 
 const tabs: { id: TabKey; icon: string; label: string }[] = [
@@ -89,7 +90,7 @@ export default function App() {
   const content = !isMainApp ? (
     <EntryScreen />
   ) : mainTab === 'orders' ? (
-    <OrdersScreen onOpenRating={() => setMainTab('rating')} />
+    <OrdersScreen />
   ) : mainTab === 'rating' ? (
     <RatingScreen onPendingCountChange={setPendingRatingCount} />
   ) : mainTab === 'profile' ? (
@@ -169,33 +170,4 @@ const BottomNav = ({
   </nav>
 );
 
-const ProfileScreen = () => {
-  const role = useSafargoStore((state) => state.role);
-  const location = useSafargoStore((state) => state.location);
-  const currentUser = useSafargoStore((state) => state.currentUser);
 
-  return (
-    <div className="safe-bottom flex flex-1 flex-col gap-4 px-5 py-5">
-      <div>
-        <h2 className="text-xl font-extrabold">Profil</h2>
-        <p className="text-sm font-bold text-slate-500">Safargo ma'lumotlari</p>
-      </div>
-      <Card>
-        <div className="space-y-3 text-sm font-bold">
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-slate-500">Ism</span>
-            <span className="text-right text-slate-900">{currentUser?.name ?? 'Foydalanuvchi'}</span>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-slate-500">Rol</span>
-            <span className="text-right text-slate-900">{role === 'driver' ? 'Haydovchi' : "Yo'lovchi"}</span>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-slate-500">Joylashuv</span>
-            <span className="text-right text-slate-900">{location?.labelUz ?? 'Tanlanmagan'}</span>
-          </div>
-        </div>
-      </Card>
-    </div>
-  );
-};

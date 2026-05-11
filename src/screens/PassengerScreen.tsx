@@ -193,15 +193,15 @@ export const PassengerScreen = ({ mode = 'new' }: PassengerScreenProps) => {
     setError('');
 
     try {
-      await submitRating({
+      await submitRating(
         requestId,
         driverId,
-        passengerId: passengerIdentity.id,
+        passengerIdentity.id,
         stars,
-        onTime: stars,
-        car: stars,
-        manners: stars,
-      });
+        stars,
+        stars,
+        stars,
+      );
       setRatingTargetRequestId(undefined);
       await loadMyRequests();
       hapticSuccess();
