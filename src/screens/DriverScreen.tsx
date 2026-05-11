@@ -1,48 +1,120 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { Bell, Check, X } from 'lucide-react';
 import { regions } from '../data/locations';
-import { hapticSuccess } from '../lib/telegram';
+import { applyToRequest, getMatchingRequests, saveDriverProfile } from '../lib/api';
+import { supabase } from '../lib/supabase';
+import { getTelegramIdentity, hapticSuccess } from '../lib/telegram';
 import { useSafargoStore } from '../store/useSafargoStore';
 import type { DriverApplication, PassengerRequest, RegionId } from '../types/safargo';
-import { Button, Card, EmptyState, FieldLabel, Input, Pill, Select } from '../components/ui';
+import { Button, Card, EmptyState, FieldLabel, Input, Pill, Select, Spinner } from '../components/ui';
 import { preferenceLabel, requestRoute } from '../utils/format';
 
 export const DriverScreen = () => {
   const location = useSafargoStore((state) => state.location);
-  const passengerRequests = useSafargoStore((state) => state.passengerRequests);
-  const addRidePost = useSafargoStore((state) => state.addRidePost);
-  const acceptIncomingRequest = useSafargoStore((state) => state.acceptIncomingRequest);
-  const rejectIncomingRequest = useSafargoStore((state) => state.rejectIncomingRequest);
-
+  const [requests, setRequests] = useState<PassengerRequest[]>([]);
   const [destinationRegionId, setDestinationRegionId] = useState<RegionId>('toshkent');
   const [departureWindow, setDepartureWindow] = useState<DriverApplication['departureWindow']>('Hozir');
   const [seatsAvailable, setSeatsAvailable] = useState(3);
   const [pricePerSeat, setPricePerSeat] = useState('120000');
   const [frontSeatExtra, setFrontSeatExtra] = useState('20000');
   const [smoking, setSmoking] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const incomingRequests = passengerRequests.filter(
-    (request) => request.status === 'active' && request.origin.districtId === location?.districtId,
-  );
+  const loadRequests = async (districtId: string) => {
+    setIsLoading(true);
+    setError('');
 
-  const submitRide = () => {
-    if (!location) return;
-
-    addRidePost({
-      origin: location,
-      destinationRegionId,
-      departureWindow,
-      seatsAvailable,
-      pricePerSeat: Number(pricePerSeat) || 0,
-      frontSeatExtra: Number(frontSeatExtra) || 0,
-      smoking,
-    });
-    hapticSuccess();
+    try {
+      const data = await getMatchingRequests(districtId);
+      setRequests(data);
+    } catch {
+      setError("Xatolik. Qayta urinib ko'ring.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const accept = (requestId: string) => {
-    acceptIncomingRequest(requestId);
-    hapticSuccess();
+  useEffect(() => {
+    const districtId = location?.districtId;
+
+    if (!districtId) {
+      setRequests([]);
+      setIsLoading(false);
+      return undefined;
+    }
+
+    let active = true;
+    void loadRequests(districtId);
+
+    const channel: RealtimeChannel = supabase
+      .channel('new-requests')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'passenger_requests',
+          filter: `origin_district_id=eq.${districtId}`,
+        },
+        () => {
+          if (active) {
+            void loadRequests(districtId);
+          }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      active = false;
+      void supabase.removeChannel(channel);
+    };
+  }, [location?.districtId]);
+
+  const incomingRequests = requests.filter((request) => request.status === 'active');
+
+  const submitRide = async () => {
+    if (!location) {
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+
+    try {
+      const identity = getTelegramIdentity();
+      await saveDriverProfile(identity.id, 'Noma\'lum', 2020, '+998 90 000 00 00');
+      hapticSuccess();
+    } catch {
+      setError("Xatolik. Qayta urinib ko'ring.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const accept = async (requestId: string) => {
+    if (!location) {
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+
+    try {
+      const identity = getTelegramIdentity();
+      await applyToRequest(requestId, {
+        driverId: identity.id,
+        pricePerSeat: Number(pricePerSeat) || 0,
+        departureWindow,
+      });
+      await loadRequests(location.districtId);
+      hapticSuccess();
+    } catch {
+      setError("Xatolik. Qayta urinib ko'ring.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -115,9 +187,11 @@ export const DriverScreen = () => {
             </div>
           </div>
 
-          <Button className="w-full" onClick={submitRide}>
+          <Button className="w-full" onClick={() => void submitRide()} disabled={isLoading}>
             E'lon qilish →
           </Button>
+          {isLoading ? <p className="text-xs font-bold text-slate-500">Yuklanmoqda...</p> : null}
+          {error ? <p className="text-xs font-bold text-red-500">Xatolik. Qayta urinib ko'ring.</p> : null}
         </div>
       </Card>
 
@@ -127,15 +201,22 @@ export const DriverScreen = () => {
           <Pill tone="blue">{incomingRequests.length} ta</Pill>
         </div>
         <div className="space-y-3">
-          {incomingRequests.length === 0 ? (
-            <EmptyState title="So'rov yo'q" text="Sizning tumaningizdan yo'lovchi chiqsa shu yerda ko'rinadi." />
+          {isLoading && incomingRequests.length === 0 ? (
+            <Card>
+              <Spinner />
+              <p className="mt-2 text-center text-sm font-bold text-slate-600">Yuklanmoqda...</p>
+            </Card>
+          ) : error ? (
+            <EmptyState title="Xatolik" text="Xatolik. Qayta urinib ko'ring." />
+          ) : incomingRequests.length === 0 ? (
+            <EmptyState title="Hozircha so'rovlar yo'q" text="Sizning tumaningizdan yo'lovchi chiqsa shu yerda ko'rinadi." />
           ) : (
             incomingRequests.map((request) => (
               <IncomingRequestCard
                 key={request.id}
                 request={request}
-                onAccept={() => accept(request.id)}
-                onReject={() => rejectIncomingRequest(request.id)}
+                onAccept={() => void accept(request.id)}
+                onReject={() => setRequests((current) => current.filter((item) => item.id !== request.id))}
               />
             ))
           )}

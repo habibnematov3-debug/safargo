@@ -1,11 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { ArrowLeft, Star } from 'lucide-react';
 import { regions } from '../data/locations';
-import { hapticSuccess } from '../lib/telegram';
+import { completeRequest, createRequest, getMyRequests, selectDriver, submitRating } from '../lib/api';
+import { supabase } from '../lib/supabase';
+import { getTelegramIdentity, hapticSuccess } from '../lib/telegram';
 import { regionDefaults, useSafargoStore } from '../store/useSafargoStore';
 import type { DriverProfile, PassengerPreference, PassengerRequest, RegionId } from '../types/safargo';
-import { Button, Card, EmptyState, FieldLabel, Pill, Select } from '../components/ui';
-import { badgeLabel, money, preferenceLabel, requestRoute } from '../utils/format';
+import { Button, Card, EmptyState, FieldLabel, Pill, Select, Spinner } from '../components/ui';
+import { preferenceLabel, requestRoute } from '../utils/format';
 
 const preferenceOptions: { id: PassengerPreference; label: string }[] = [
   { id: 'front_seat', label: "💺 Old o'rindiq" },
@@ -21,14 +24,8 @@ type PassengerView =
 
 export const PassengerScreen = () => {
   const location = useSafargoStore((state) => state.location);
-  const passengerRequests = useSafargoStore((state) => state.passengerRequests);
-  const driverProfiles = useSafargoStore((state) => state.driverProfiles);
-  const addPassengerRequest = useSafargoStore((state) => state.addPassengerRequest);
-  const selectDriver = useSafargoStore((state) => state.selectDriver);
-  const completeRequest = useSafargoStore((state) => state.completeRequest);
-  const ratingTargetRequestId = useSafargoStore((state) => state.ratingTargetRequestId);
-  const rateDriver = useSafargoStore((state) => state.rateDriver);
-
+  const [requests, setRequests] = useState<PassengerRequest[]>([]);
+  const [drivers, setDrivers] = useState<DriverProfile[]>([]);
   const [view, setView] = useState<PassengerView>({ name: 'list' });
   const [destinationRegionId, setDestinationRegionId] = useState<RegionId>(regionDefaults.destinationRegionId);
   const [dateMode, setDateMode] = useState<'today' | 'tomorrow' | 'pick'>('today');
@@ -37,43 +34,167 @@ export const PassengerScreen = () => {
   const [seats, setSeats] = useState(regionDefaults.seats);
   const [preferences, setPreferences] = useState<PassengerPreference[]>(regionDefaults.preferences);
   const [stars, setStars] = useState(5);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [ratingTargetRequestId, setRatingTargetRequestId] = useState<string | undefined>();
 
-  const activeRequests = passengerRequests.filter((request) => request.status !== 'cancelled');
-  const selectedRequest = view.name !== 'list' ? passengerRequests.find((request) => request.id === view.requestId) : undefined;
+  const passengerIdentity = getTelegramIdentity();
+
+  const loadRequests = async () => {
+    setIsLoading(true);
+    setError('');
+
+    try {
+      const data = await getMyRequests(passengerIdentity.id);
+      setRequests(data.requests);
+      setDrivers(data.drivers);
+    } catch {
+      setError("Xatolik. Qayta urinib ko'ring.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadRequests();
+  }, []);
+
+  useEffect(() => {
+    if (requests.length === 0) {
+      return undefined;
+    }
+
+    const channels: RealtimeChannel[] = requests.map((request) =>
+      supabase
+        .channel(`new-applications-${request.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'driver_applications',
+            filter: `request_id=eq.${request.id}`,
+          },
+          () => {
+            void loadRequests();
+          },
+        )
+        .subscribe(),
+    );
+
+    return () => {
+      channels.forEach((channel) => {
+        void supabase.removeChannel(channel);
+      });
+    };
+  }, [requests]);
+
+  const activeRequests = requests.filter((request) => request.status !== 'cancelled');
+  const selectedRequest =
+    view.name !== 'list' ? requests.find((request) => request.id === view.requestId) : undefined;
   const selectedDriver =
-    view.name === 'confirmation' ? driverProfiles.find((driver) => driver.id === view.driverId) : undefined;
+    view.name === 'confirmation' ? drivers.find((driver) => driver.id === view.driverId) : undefined;
   const ratingRequest = useMemo(
-    () => passengerRequests.find((request) => request.id === ratingTargetRequestId),
-    [passengerRequests, ratingTargetRequestId],
+    () => requests.find((request) => request.id === ratingTargetRequestId),
+    [requests, ratingTargetRequestId],
   );
 
-  const submitRequest = () => {
-    if (!location) return;
+  const submitRequest = async () => {
+    if (!location) {
+      return;
+    }
 
-    const dateISO =
-      dateMode === 'today'
-        ? new Date().toISOString().slice(0, 10)
-        : dateMode === 'tomorrow'
-          ? new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
-          : pickedDate;
+    setIsLoading(true);
+    setError('');
 
-    addPassengerRequest({
-      passengerName: 'Siz',
-      origin: location,
-      destinationRegionId,
-      dateISO,
-      timeApprox,
-      seats,
-      preferences,
-    });
-    hapticSuccess();
+    try {
+      const dateISO =
+        dateMode === 'today'
+          ? new Date().toISOString().slice(0, 10)
+          : dateMode === 'tomorrow'
+            ? new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
+            : pickedDate;
+
+      await createRequest(
+        passengerIdentity.id,
+        passengerIdentity.name,
+        location.regionId,
+        location.districtId,
+        location.labelUz,
+        destinationRegionId,
+        dateISO,
+        timeApprox,
+        seats,
+        preferences,
+      );
+      await loadRequests();
+      hapticSuccess();
+    } catch {
+      setError("Xatolik. Qayta urinib ko'ring.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const chooseDriver = async (requestId: string, driverId: string) => {
+    setIsLoading(true);
+    setError('');
+
+    try {
+      await selectDriver(requestId, driverId);
+      await loadRequests();
+      setView({ name: 'confirmation', requestId, driverId });
+      hapticSuccess();
+    } catch {
+      setError("Xatolik. Qayta urinib ko'ring.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const completeRide = async (requestId: string) => {
+    setIsLoading(true);
+    setError('');
+
+    try {
+      await completeRequest(requestId);
+      await loadRequests();
+      setRatingTargetRequestId(requestId);
+      hapticSuccess();
+    } catch {
+      setError("Xatolik. Qayta urinib ko'ring.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const rateCurrentDriver = async (requestId: string, driverId: string) => {
+    setIsLoading(true);
+    setError('');
+
+    try {
+      await submitRating({
+        requestId,
+        driverId,
+        passengerId: passengerIdentity.id,
+        stars,
+        onTime: stars,
+        car: stars,
+        manners: stars,
+      });
+      setRatingTargetRequestId(undefined);
+      await loadRequests();
+      hapticSuccess();
+    } catch {
+      setError("Xatolik. Qayta urinib ko'ring.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const togglePreference = (preference: PassengerPreference) => {
     setPreferences((current) =>
-      current.includes(preference)
-        ? current.filter((item) => item !== preference)
-        : [...current, preference],
+      current.includes(preference) ? current.filter((item) => item !== preference) : [...current, preference],
     );
   };
 
@@ -87,11 +208,18 @@ export const PassengerScreen = () => {
           <h2 className="text-xl font-extrabold">Haydovchilar</h2>
           <p className="text-sm font-bold text-slate-500">{requestRoute(selectedRequest)}</p>
         </div>
-        {selectedRequest.applicants.length === 0 ? (
+        {isLoading ? (
+          <Card>
+            <Spinner />
+            <p className="mt-2 text-center text-sm font-bold text-slate-600">Yuklanmoqda...</p>
+          </Card>
+        ) : error ? (
+          <EmptyState title="Xatolik" text="Xatolik. Qayta urinib ko'ring." />
+        ) : selectedRequest.applicants.length === 0 ? (
           <EmptyState title="Hali ariza yo'q" text="Mos haydovchi chiqsa shu yerda ko'rinadi." />
         ) : (
           selectedRequest.applicants.map((application) => {
-            const driver = driverProfiles.find((profile) => profile.id === application.driverId);
+            const driver = drivers.find((profile) => profile.id === application.driverId);
             return driver ? (
               <DriverApplicantCard
                 key={application.id}
@@ -99,10 +227,7 @@ export const PassengerScreen = () => {
                 request={selectedRequest}
                 pricePerSeat={application.pricePerSeat}
                 departureWindow={application.departureWindow}
-                onSelect={() => {
-                  selectDriver(selectedRequest.id, driver.id);
-                  setView({ name: 'confirmation', requestId: selectedRequest.id, driverId: driver.id });
-                }}
+                onSelect={() => void chooseDriver(selectedRequest.id, driver.id)}
               />
             ) : null;
           })
@@ -133,7 +258,7 @@ export const PassengerScreen = () => {
             <p className="text-xs font-extrabold uppercase text-primary">Telefon</p>
             <p className="mt-1 text-xl font-extrabold text-slate-950">{selectedDriver.phone}</p>
           </div>
-          <Button className="mt-4 w-full" onClick={() => completeRequest(selectedRequest.id)}>
+          <Button className="mt-4 w-full" onClick={() => void completeRide(selectedRequest.id)}>
             Safar yakunlandi ✓
           </Button>
         </Card>
@@ -219,9 +344,11 @@ export const PassengerScreen = () => {
             </div>
           </div>
 
-          <Button className="w-full" onClick={submitRequest}>
+          <Button className="w-full" onClick={() => void submitRequest()} disabled={isLoading}>
             So'rov yuborish →
           </Button>
+          {isLoading ? <p className="text-xs font-bold text-slate-500">Yuklanmoqda...</p> : null}
+          {error ? <p className="text-xs font-bold text-red-500">Xatolik. Qayta urinib ko'ring.</p> : null}
         </div>
       </Card>
 
@@ -235,7 +362,7 @@ export const PassengerScreen = () => {
               </button>
             ))}
           </div>
-          <Button className="mt-3 w-full" onClick={() => rateDriver(ratingRequest.selectedDriverId ?? '', stars)}>
+          <Button className="mt-3 w-full" onClick={() => void rateCurrentDriver(ratingRequest.id, ratingRequest.selectedDriverId ?? '')} disabled={isLoading}>
             Baholash
           </Button>
         </Card>
@@ -244,11 +371,22 @@ export const PassengerScreen = () => {
       <section>
         <h2 className="mb-3 text-lg font-extrabold">Mening faol so'rovlarim</h2>
         <div className="space-y-3">
-          {activeRequests.length === 0 ? (
-            <EmptyState title="So'rov yo'q" text="Yangi safar uchun so'rov yuboring." />
+          {isLoading && activeRequests.length === 0 ? (
+            <Card>
+              <Spinner />
+              <p className="mt-2 text-center text-sm font-bold text-slate-600">Yuklanmoqda...</p>
+            </Card>
+          ) : error ? (
+            <EmptyState title="Xatolik" text="Xatolik. Qayta urinib ko'ring." />
+          ) : activeRequests.length === 0 ? (
+            <EmptyState title="Hozircha so'rovlar yo'q" text="Yangi safar uchun so'rov yuboring." />
           ) : (
             activeRequests.map((request) => (
-              <PassengerRequestCard key={request.id} request={request} onOpen={() => setView({ name: 'applicants', requestId: request.id })} />
+              <PassengerRequestCard
+                key={request.id}
+                request={request}
+                onOpen={() => setView({ name: 'applicants', requestId: request.id })}
+              />
             ))
           )}
         </div>
@@ -328,8 +466,24 @@ const PassengerRequestCard = ({ request, onOpen }: { request: PassengerRequest; 
       </div>
       <div className="mt-4 flex items-center justify-between rounded-2xl bg-blue-50 px-3 py-2">
         <span className="text-sm font-extrabold text-primary">{request.applicants.length} ta haydovchi ariza berdi</span>
-        {request.applicants.length > 0 ? <span className="rounded-full bg-primary px-2 py-1 text-[10px] font-extrabold text-white">NEW</span> : null}
+        {request.applicants.length > 0 ? (
+          <span className="rounded-full bg-primary px-2 py-1 text-[10px] font-extrabold text-white">NEW</span>
+        ) : null}
       </div>
     </Card>
   </button>
 );
+
+function money(value: number): string {
+  return `${new Intl.NumberFormat('uz-UZ').format(value)} so'm`;
+}
+
+function badgeLabel(badge: DriverProfile['badges'][number]): string {
+  const labels: Record<DriverProfile['badges'][number], string> = {
+    verified: '✓ Tasdiqlangan',
+    clean: '✦ Toza',
+    on_time: '⏱ Vaqtida',
+  };
+
+  return labels[badge];
+}

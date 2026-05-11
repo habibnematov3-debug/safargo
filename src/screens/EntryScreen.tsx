@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Car, Compass, MapPin } from 'lucide-react';
 import { buildLocation, defaultLocation, districts, getDistrictsByRegion, regions } from '../data/locations';
 import { reverseGeocode } from '../lib/geocode';
+import { saveUser } from '../lib/api';
 import { getTelegramUserName, requestTelegramLocation } from '../lib/telegram';
 import { useSafargoStore } from '../store/useSafargoStore';
 import type { DistrictId, RegionId, UserRole } from '../types/safargo';
@@ -17,6 +18,7 @@ export const EntryScreen = () => {
   const [loading, setLoading] = useState(true);
   const [manual, setManual] = useState(false);
   const [error, setError] = useState('');
+  const [savingUser, setSavingUser] = useState(false);
   const [regionId, setRegionId] = useState<RegionId>(defaultLocation.regionId);
   const [districtId, setDistrictId] = useState<DistrictId>(defaultLocation.districtId);
 
@@ -42,15 +44,36 @@ export const EntryScreen = () => {
     detect();
   }, [setLocation]);
 
-  const saveManualLocation = () => {
+  const persistUser = async (nextRole: UserRole, nextLocation: { regionId: RegionId; districtId: DistrictId; labelUz: string }) => {
+    setSavingUser(true);
+    setError('');
+
+    try {
+      const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+      const userId = String(tgUser?.id ?? 'dev-user-123');
+      const userName = tgUser?.first_name ?? 'Foydalanuvchi';
+
+      await saveUser(userId, userName, nextRole, nextLocation.regionId, nextLocation.districtId, nextLocation.labelUz);
+    } catch {
+      setError("Xatolik. Qayta urinib ko'ring.");
+    } finally {
+      setSavingUser(false);
+    }
+  };
+
+  const saveManualLocation = async () => {
     const nextDistrictId = availableDistricts.some((district) => district.id === districtId)
       ? districtId
       : availableDistricts[0]?.id ?? districts[0].id;
-    setLocation(buildLocation(regionId, nextDistrictId));
+    const nextLocation = buildLocation(regionId, nextDistrictId);
+    setLocation(nextLocation);
+    await persistUser(role ?? 'passenger', nextLocation);
     confirmLocation();
   };
 
-  const chooseRole = (nextRole: UserRole) => {
+  const chooseRole = async (nextRole: UserRole) => {
+    const nextLocation = location ?? defaultLocation;
+    await persistUser(nextRole, nextLocation);
     setRole(nextRole);
   };
 
@@ -120,6 +143,7 @@ export const EntryScreen = () => {
               </div>
             )}
           </div>
+          {savingUser ? <p className="mt-3 text-xs font-bold text-slate-500">Yuklanmoqda...</p> : null}
         </div>
       </Card>
 
@@ -130,7 +154,7 @@ export const EntryScreen = () => {
             className={`rounded-[22px] border p-4 text-left transition active:scale-[0.98] ${
               role === 'driver' ? 'border-primary bg-blue-50' : 'border-slate-100 bg-white'
             }`}
-            onClick={() => chooseRole('driver')}
+            onClick={() => void chooseRole('driver')}
           >
             <Car className="text-primary" size={28} />
             <p className="mt-4 text-lg font-extrabold">Haydovchiman</p>
@@ -139,7 +163,7 @@ export const EntryScreen = () => {
             className={`rounded-[22px] border p-4 text-left transition active:scale-[0.98] ${
               role === 'passenger' ? 'border-primary bg-blue-50' : 'border-slate-100 bg-white'
             }`}
-            onClick={() => chooseRole('passenger')}
+            onClick={() => void chooseRole('passenger')}
           >
             <Compass className="text-primary" size={28} />
             <p className="mt-4 text-lg font-extrabold">Yo'lovchiman</p>

@@ -8,7 +8,6 @@ import type {
   UserLocation,
   UserRole,
 } from '../types/safargo';
-import type { TelegramUser } from './telegram';
 
 const PASSENGER_PREFERENCES: PassengerPreference[] = [
   'front_seat',
@@ -158,27 +157,30 @@ const toPassengerRequest = (
 });
 
 export const saveUser = async (
-  telegramUser: TelegramUser | undefined,
-  role: UserRole | undefined,
-  location: UserLocation | undefined,
+  userId: string,
+  name: string,
+  role: UserRole,
+  regionId: string,
+  districtId: string,
+  districtLabel: string,
 ): Promise<{ id: string; name: string }> => {
-  const id = String(telegramUser?.id ?? 'dev-user-123');
-  const name = telegramUser?.first_name ?? telegramUser?.username ?? 'Foydalanuvchi';
+  const id = String(userId || 'dev-user-123');
+  const userName = name.trim() || 'Foydalanuvchi';
 
   const { error } = await supabase.from('users').upsert({
     id,
-    name,
-    role: role ?? null,
-    region_id: location?.regionId ?? null,
-    district_id: location?.districtId ?? null,
-    district_label: location?.labelUz ?? null,
+    name: userName,
+    role,
+    region_id: regionId,
+    district_id: districtId,
+    district_label: districtLabel,
   });
 
   if (error) {
     throw error;
   }
 
-  return { id, name };
+  return { id, name: userName };
 };
 
 export const saveDriverProfile = async (
@@ -199,41 +201,43 @@ export const saveDriverProfile = async (
   }
 };
 
-export const createRequest = async (data: {
-  passengerId: string;
-  passengerName: string;
-  origin: UserLocation;
-  destinationRegionId: PassengerRequest['destinationRegionId'];
-  dateISO: string;
-  timeApprox: string;
-  seats: number;
-  preferences: PassengerPreference[];
-}): Promise<PassengerRequest> => {
+export const createRequest = async (
+  passengerId: string,
+  passengerName: string,
+  originRegionId: string,
+  originDistrictId: string,
+  originLabel: string,
+  destinationRegionId: PassengerRequest['destinationRegionId'],
+  dateIso: string,
+  timeApprox: string,
+  seats: number,
+  preferences: string[],
+): Promise<string> => {
   const payload = {
-    passenger_id: data.passengerId,
-    passenger_name: data.passengerName,
-    origin_region_id: data.origin.regionId,
-    origin_district_id: data.origin.districtId,
-    origin_label: data.origin.labelUz,
-    destination_region_id: data.destinationRegionId,
-    date_iso: data.dateISO,
-    time_approx: data.timeApprox,
-    seats: data.seats,
-    preferences: data.preferences,
+    passenger_id: passengerId,
+    passenger_name: passengerName,
+    origin_region_id: originRegionId,
+    origin_district_id: originDistrictId,
+    origin_label: originLabel,
+    destination_region_id: destinationRegionId,
+    date_iso: dateIso,
+    time_approx: timeApprox,
+    seats,
+    preferences,
     status: 'active' as const,
   };
 
   const { data: row, error } = await supabase
     .from('passenger_requests')
     .insert(payload)
-    .select('*')
-    .single<DbPassengerRequest>();
+    .select('id')
+    .single<{ id: string }>();
 
   if (error || !row) {
     throw error ?? new Error('Request yaratilmadi');
   }
 
-  return toPassengerRequest(row, []);
+  return row.id;
 };
 
 export const getMatchingRequests = async (districtId: string): Promise<PassengerRequest[]> => {
@@ -373,15 +377,20 @@ export const submitRating = async (rating: {
   driverId: string;
   passengerId: string;
   stars: number;
+  onTime: number;
+  car: number;
+  manners: number;
+  comment?: string;
 }): Promise<void> => {
   const { error: ratingError } = await supabase.from('ratings').insert({
     request_id: rating.requestId,
     driver_id: rating.driverId,
     passenger_id: rating.passengerId,
     stars: rating.stars,
-    on_time: rating.stars,
-    car: rating.stars,
-    manners: rating.stars,
+    on_time: rating.onTime,
+    car: rating.car,
+    manners: rating.manners,
+    comment: rating.comment ?? null,
   });
 
   if (ratingError) {
