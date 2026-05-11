@@ -7,3 +7,16 @@
   [32m[1mVITE[22m v7.3.3[39m  [2mready in [0m[1m981[22m[2m[0m ms[22m
 
   [32m➜[39m  [1mLocal[22m:   [36mhttp://127.0.0.1:[1m5173[22m/[39m
+[2m16:31:02[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/styles.css, /src/App.tsx, /src/screens/EntryScreen.tsx, /src/screens/DriverScreen.tsx, /src/screens/PassengerScreen.tsx[22m
+[2m16:31:17[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/styles.css, /src/screens/EntryScreen.tsx[22m
+[2m16:31:28[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx, /src/components/ui.tsx, /src/screens/EntryScreen.tsx, /src/screens/DriverScreen.tsx, /src/screens/PassengerScreen.tsx, /src/styles.css[22m
+[2m16:32:18[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/screens/EntryScreen.tsx, /src/styles.css[22m
+[2m16:32:33[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/screens/EntryScreen.tsx, /src/styles.css[22m
+[2m16:43:34[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx, /src/components/ui.tsx, /src/screens/EntryScreen.tsx, /src/screens/DriverScreen.tsx, /src/screens/PassengerScreen.tsx, /src/styles.css[22m
+[2m16:48:12[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/styles.css, /src/screens/EntryScreen.tsx[22m
+[2m16:56:45[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/styles.css, /src/App.tsx, /src/screens/EntryScreen.tsx, /src/screens/DriverScreen.tsx, /src/screens/PassengerScreen.tsx[22m
+[2m17:11:36[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/styles.css, /src/App.tsx, /src/screens/EntryScreen.tsx, /src/screens/DriverScreen.tsx, /src/screens/PassengerScreen.tsx[22m
+[2m17:11:53[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/screens/PassengerScreen.tsx, /src/styles.css[22m
+[2m17:12:15[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/screens/DriverScreen.tsx, /src/styles.css[22m
+[2m17:12:35[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/screens/EntryScreen.tsx, /src/styles.css[22m
+[2m17:13:05[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx, /src/styles.css[22m
