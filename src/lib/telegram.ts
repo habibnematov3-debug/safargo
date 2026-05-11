@@ -5,11 +5,6 @@ export type TelegramUser = {
   username?: string;
 };
 
-type LocationData = {
-  latitude: number;
-  longitude: number;
-};
-
 type HapticFeedback = {
   impactOccurred: (style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft') => void;
   notificationOccurred: (type: 'error' | 'success' | 'warning') => void;
@@ -21,7 +16,6 @@ type TelegramWebApp = {
   };
   ready: () => void;
   expand: () => void;
-  requestLocation?: (callback: (locationData: LocationData | null) => void) => void;
   HapticFeedback?: HapticFeedback;
 };
 
@@ -63,26 +57,30 @@ export const hapticSuccess = (): void => {
   getTelegramApp()?.HapticFeedback?.notificationOccurred('success');
 };
 
-export const requestTelegramLocation = (): Promise<LocationData> =>
+export const requestTelegramLocation = (): Promise<{
+  latitude: number;
+  longitude: number;
+}> =>
   new Promise((resolve, reject) => {
-    const app = getTelegramApp();
-    const requestLocation = app?.requestLocation;
-
-    if (!requestLocation) {
-      reject(new Error('Telegram GPS mavjud emas'));
+    if (!navigator.geolocation) {
+      reject(new Error('GPS mavjud emas'));
       return;
     }
 
-    try {
-      requestLocation((locationData) => {
-        if (!locationData || typeof locationData.latitude !== 'number' || typeof locationData.longitude !== 'number') {
-          reject(new Error('GPS rad etildi'));
-          return;
-        }
-
-        resolve(locationData);
-      });
-    } catch {
-      reject(new Error('GPS rad etildi'));
-    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        });
+      },
+      (err) => {
+        reject(new Error('GPS rad etildi: ' + err.message));
+      },
+      {
+        timeout: 10000,
+        enableHighAccuracy: true,
+        maximumAge: 0,
+      },
+    );
   });
