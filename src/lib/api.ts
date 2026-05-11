@@ -174,6 +174,7 @@ export const saveUser = async (
     region_id: regionId,
     district_id: districtId,
     district_label: districtLabel,
+    telegram_chat_id: id,
   });
 
   if (error) {
@@ -235,6 +236,14 @@ export const createRequest = async (
 
   if (error || !row) {
     throw error ?? new Error('Request yaratilmadi');
+  }
+
+  const { error: notificationError } = await supabase.functions.invoke('notify-drivers', {
+    body: { requestId: row.id },
+  });
+
+  if (notificationError) {
+    throw notificationError;
   }
 
   return row.id;
@@ -314,7 +323,12 @@ export const getMyRequests = async (
   }
 
   const applications = applicationRows ?? [];
-  const driverIds = Array.from(new Set(applications.map((application) => application.driver_id)));
+  const selectedDriverIds = requests
+    .map((request) => request.selected_driver_id)
+    .filter((driverId): driverId is string => Boolean(driverId));
+  const driverIds = Array.from(
+    new Set([...applications.map((application) => application.driver_id), ...selectedDriverIds]),
+  );
 
   let drivers: DriverProfile[] = [];
   if (driverIds.length > 0) {
@@ -358,6 +372,14 @@ export const selectDriver = async (requestId: string, driverId: string): Promise
 
   if (error) {
     throw error;
+  }
+
+  const { error: notificationError } = await supabase.functions.invoke('notify-passenger', {
+    body: { requestId },
+  });
+
+  if (notificationError) {
+    throw notificationError;
   }
 };
 

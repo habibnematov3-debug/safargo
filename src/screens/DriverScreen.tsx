@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { Bell, Check, X } from 'lucide-react';
 import { regions } from '../data/locations';
-import { applyToRequest, getMatchingRequests, saveDriverProfile } from '../lib/api';
+import { applyToRequest, getMatchingRequests, saveDriverProfile, selectDriver } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import { getTelegramIdentity, hapticSuccess } from '../lib/telegram';
 import { useSafargoStore } from '../store/useSafargoStore';
@@ -108,6 +108,7 @@ export const DriverScreen = () => {
         pricePerSeat: Number(pricePerSeat) || 0,
         departureWindow,
       });
+      await selectDriver(requestId, identity.id);
       await loadRequests(location.districtId);
       hapticSuccess();
     } catch {

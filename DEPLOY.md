@@ -1,112 +1,89 @@
 # Safargo — Telegram Mini App
 
-Intercity ride-matching app for Uzbekistan. Built with React, TypeScript, Vite, and Tailwind CSS.
+Intercity ride-matching app for Uzbekistan. Built with React, TypeScript, Vite, Tailwind CSS, Zustand, Telegram Mini App SDK, and Supabase.
 
-## 🚀 Quick Start
+## Local Development
 
-### Local Development
 ```bash
 npm install
 npm run dev
 ```
 
-Open http://localhost:5173 in your browser.
+Create `.env.local` in the project root:
 
-### Build for Production
+```bash
+VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
+
+Do not put `TELEGRAM_BOT_TOKEN` in any `VITE_*` variable. Vite frontend variables are public in the browser bundle.
+
+## Production Build
+
 ```bash
 npm run build
 npm run preview
 ```
 
-## 📦 Deployment to Vercel
+## Supabase Notifications
 
-### 1. Install Vercel CLI
-```bash
-npm i -g vercel
+Apply the notification migration in Supabase SQL Editor:
+
+```sql
+alter table public.users
+  add column if not exists telegram_chat_id text;
+
+alter table public.driver_profiles
+  add column if not exists phone text;
 ```
 
-### 2. Set Environment Variable
-Add your Telegram bot token to Vercel:
+The full migration is in `supabase/migrations/20260511000000_add_telegram_notifications.sql`.
+
+Install and link Supabase CLI:
 
 ```bash
-vercel env add VITE_TELEGRAM_BOT_TOKEN
-# Paste: 8640801891:AAHXlCDrh-pqvUFZxXGBykDUY3VChYWAoO8
+npm install -g supabase
+supabase login
+supabase link --project-ref gyzhblctmqmqwxaokoss
 ```
 
-Or via Vercel Dashboard:
-1. Go to your project settings
-2. Environment Variables
-3. Add `VITE_TELEGRAM_BOT_TOKEN = 8640801891:AAHXlCDrh-pqvUFZxXGBykDUY3VChYWAoO8`
+Set Edge Function secrets:
 
-### 3. Deploy
 ```bash
+supabase secrets set TELEGRAM_BOT_TOKEN=your_new_bot_token
+supabase secrets set TELEGRAM_MINI_APP_URL=https://your-vercel-domain.vercel.app
+```
+
+Deploy functions:
+
+```bash
+supabase functions deploy notify-passenger
+supabase functions deploy notify-drivers
+```
+
+Local function testing:
+
+```bash
+supabase functions serve
+```
+
+## Notification Flow
+
+- Passenger creates a request in the Mini App.
+- Frontend inserts `passenger_requests`, then invokes `notify-drivers`.
+- `notify-drivers` finds drivers in the same district and sends each one a Telegram message through the bot.
+- Driver taps `Qabul qilish`.
+- Frontend updates `passenger_requests.status` and `selected_driver_id`, then invokes `notify-passenger`.
+- `notify-passenger` sends the selected driver details to the passenger.
+
+## Vercel Deployment
+
+Set only public frontend variables in Vercel:
+
+```bash
+vercel env add VITE_SUPABASE_URL
+vercel env add VITE_SUPABASE_ANON_KEY
 vercel --prod
 ```
 
-## ⚙️ Environment Variables
-
-Create `.env.local` in the root:
-```
-VITE_TELEGRAM_BOT_TOKEN=8640801891:AAHXlCDrh-pqvUFZxXGBykDUY3VChYWAoO8
-```
-
-## 📋 Features
-
-### Screen 1: Entry (Kirish)
-- GPS location detection with Nominatim
-- Manual region/district selection
-- Role choice: Driver or Passenger
-
-### Screen 2: Passenger (Yo'lovchi)
-- Post ride request with preferences
-- View driver applicants
-- Rate drivers after completion
-
-### Screen 3: Driver (Haydovchi)  
-- Post ride with pricing
-- Accept/reject passenger requests
-- Smart matching by district
-
-## 🎨 Tech Stack
-
-- React 19 + TypeScript
-- Vite 7
-- Tailwind CSS 3.4
-- Zustand (state management)
-- Telegram WebApp SDK
-- Lucide React (icons)
-
-## 📱 Bot Info
-
-- **Bot**: @Safargot_bot
-- **Token**: `8640801891:AAHXlCDrh-pqvUFZxXGBykDUY3VChYWAoO8`
-- **Max Width**: 390px (mobile)
-- **Language**: Uzbek
-
-## 🔧 Development
-
-### Available Scripts
-- `npm run dev` — Start dev server
-- `npm run build` — Build for production (TypeScript check + Vite)
-- `npm run preview` — Preview production build
-
-### Code Quality
-- TypeScript strict mode (zero `any` types)
-- All errors must be 0 before deploy
-- No unused imports
-
-## 📂 Project Structure
-
-```
-src/
-├── screens/           # Main UI screens
-│   ├── EntryScreen.tsx
-│   ├── PassengerScreen.tsx
-│   └── DriverScreen.tsx
-├── components/        # Reusable UI components
-├── store/            # Zustand state management
-├── lib/              # Utils (Telegram SDK, geocoding)
-├── data/             # Static data (regions, districts)
-├── types/            # TypeScript types
-└── utils/            # Formatting helpers
-```
+Bot token storage belongs only in Supabase Edge Function secrets.
