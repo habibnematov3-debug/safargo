@@ -65,19 +65,24 @@ export const hapticSuccess = (): void => {
 
 export const requestTelegramLocation = (): Promise<LocationData> =>
   new Promise((resolve, reject) => {
-    const requestLocation = getTelegramApp()?.requestLocation;
+    const app = getTelegramApp();
+    const requestLocation = app?.requestLocation;
 
     if (!requestLocation) {
       reject(new Error('Telegram GPS mavjud emas'));
       return;
     }
 
-    requestLocation((locationData) => {
-      if (!locationData) {
-        reject(new Error('GPS rad etildi'));
-        return;
-      }
+    try {
+      requestLocation((locationData) => {
+        if (!locationData || typeof locationData.latitude !== 'number' || typeof locationData.longitude !== 'number') {
+          reject(new Error('GPS rad etildi'));
+          return;
+        }
 
-      resolve(locationData);
-    });
+        resolve(locationData);
+      });
+    } catch {
+      reject(new Error('GPS rad etildi'));
+    }
   });

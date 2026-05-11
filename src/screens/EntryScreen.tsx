@@ -13,10 +13,12 @@ export const EntryScreen = () => {
   const role = useSafargoStore((state) => state.role);
   const setLocation = useSafargoStore((state) => state.setLocation);
   const confirmLocation = useSafargoStore((state) => state.confirmLocation);
+  const confirmedLocation = useSafargoStore((state) => state.confirmedLocation);
   const setRole = useSafargoStore((state) => state.setRole);
 
   const [loading, setLoading] = useState(true);
   const [manual, setManual] = useState(false);
+  const [manualMessage, setManualMessage] = useState('');
   const [error, setError] = useState('');
   const [savingUser, setSavingUser] = useState(false);
   const [regionId, setRegionId] = useState<RegionId>(defaultLocation.regionId);
@@ -32,10 +34,16 @@ export const EntryScreen = () => {
         setLocation(resolved);
         setRegionId(resolved.regionId);
         setDistrictId(resolved.districtId);
-      } catch {
+        setManual(false);
+        setManualMessage('');
+      } catch (detectError) {
         setManual(true);
-        setLocation(defaultLocation);
-        setError("Xatolik. Qayta urinib ko'ring.");
+        const message = detectError instanceof Error ? detectError.message : '';
+        setManualMessage(
+          message === "GPS sekin ishladi. Qo'lda tanlang:"
+            ? message
+            : "GPS aniqlanmadi. Qo'lda tanlang:",
+        );
       } finally {
         setLoading(false);
       }
@@ -69,6 +77,13 @@ export const EntryScreen = () => {
     setLocation(nextLocation);
     await persistUser(role ?? 'passenger', nextLocation);
     confirmLocation();
+    setManual(false);
+  };
+
+  const confirmGpsLocation = async () => {
+    confirmLocation();
+    setManual(false);
+    setManualMessage('');
   };
 
   const chooseRole = async (nextRole: UserRole) => {
@@ -94,11 +109,16 @@ export const EntryScreen = () => {
             {loading ? (
               <div className="mt-5">
                 <Spinner />
-                <p className="mt-3 text-center text-xs font-bold text-slate-500">GPS aniqlanmoqda...</p>
+                <p className="mt-3 text-center text-xs font-bold text-slate-500">📡 Joylashuvingiz aniqlanmoqda...</p>
+              </div>
+            ) : confirmedLocation ? (
+              <div className="mt-3 rounded-2xl bg-blue-50 px-3 py-4">
+                <p className="text-lg font-extrabold leading-snug">📍 {location?.labelUz} tanlandi</p>
               </div>
             ) : manual ? (
               <div className="mt-4 space-y-3">
-                <p className="text-xs font-bold text-red-500">{error}</p>
+                {manualMessage ? <p className="text-xs font-bold text-slate-500">{manualMessage}</p> : null}
+                {error ? <p className="text-xs font-bold text-red-500">{error}</p> : null}
                 <div>
                   <FieldLabel>Viloyat</FieldLabel>
                   <Select
@@ -135,8 +155,14 @@ export const EntryScreen = () => {
               <div className="mt-3 space-y-3">
                 <p className="text-lg font-extrabold leading-snug">📍 {location?.labelUz} — to'g'rimi?</p>
                 <div className="grid grid-cols-2 gap-2">
-                  <Button onClick={confirmLocation}>Ha ✓</Button>
-                  <Button variant="secondary" onClick={() => setManual(true)}>
+                  <Button onClick={confirmGpsLocation}>Ha, to'g'ri ✓</Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setManual(true);
+                      setManualMessage("Qo'lda tanlang:");
+                    }}
+                  >
                     O'zgartirish
                   </Button>
                 </div>
@@ -147,29 +173,31 @@ export const EntryScreen = () => {
         </div>
       </Card>
 
-      <Card>
-        <p className="text-sm font-extrabold text-slate-900">Rolni tanlang</p>
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <button
-            className={`rounded-[22px] border p-4 text-left transition active:scale-[0.98] ${
-              role === 'driver' ? 'border-primary bg-blue-50' : 'border-slate-100 bg-white'
-            }`}
-            onClick={() => void chooseRole('driver')}
-          >
-            <Car className="text-primary" size={28} />
-            <p className="mt-4 text-lg font-extrabold">Haydovchiman</p>
-          </button>
-          <button
-            className={`rounded-[22px] border p-4 text-left transition active:scale-[0.98] ${
-              role === 'passenger' ? 'border-primary bg-blue-50' : 'border-slate-100 bg-white'
-            }`}
-            onClick={() => void chooseRole('passenger')}
-          >
-            <Compass className="text-primary" size={28} />
-            <p className="mt-4 text-lg font-extrabold">Yo'lovchiman</p>
-          </button>
-        </div>
-      </Card>
+      {confirmedLocation ? (
+        <Card>
+          <p className="text-sm font-extrabold text-slate-900">Rolni tanlang</p>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <button
+              className={`rounded-[22px] border p-4 text-left transition active:scale-[0.98] ${
+                role === 'driver' ? 'border-primary bg-blue-50' : 'border-slate-100 bg-white'
+              }`}
+              onClick={() => void chooseRole('driver')}
+            >
+              <Car className="text-primary" size={28} />
+              <p className="mt-4 text-lg font-extrabold">Haydovchiman</p>
+            </button>
+            <button
+              className={`rounded-[22px] border p-4 text-left transition active:scale-[0.98] ${
+                role === 'passenger' ? 'border-primary bg-blue-50' : 'border-slate-100 bg-white'
+              }`}
+              onClick={() => void chooseRole('passenger')}
+            >
+              <Compass className="text-primary" size={28} />
+              <p className="mt-4 text-lg font-extrabold">Yo'lovchiman</p>
+            </button>
+          </div>
+        </Card>
+      ) : null}
     </div>
   );
 };

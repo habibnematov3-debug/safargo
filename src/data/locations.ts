@@ -17,22 +17,49 @@ export const regions: { id: RegionId; labelUz: string }[] = [
 ];
 
 export const districts: District[] = [
-  { id: 'toshkent-chilonzor', regionId: 'toshkent', labelUz: 'Chilonzor tumani' },
-  { id: 'toshkent-sergeli', regionId: 'toshkent', labelUz: 'Sergeli tumani' },
-  { id: 'samarkand-juma', regionId: 'samarkand', labelUz: 'Juma tumani' },
-  { id: 'samarkand-urgut', regionId: 'samarkand', labelUz: 'Urgut tumani' },
-  { id: 'fargona-yaypan', regionId: 'fargona', labelUz: 'Yaypan tumani' },
-  { id: 'fargona-qoqon', regionId: 'fargona', labelUz: "Qo'qon shahri" },
-  { id: 'buxoro-gijduvon', regionId: 'buxoro', labelUz: "G'ijduvon tumani" },
-  { id: 'namangan-chust', regionId: 'namangan', labelUz: 'Chust tumani' },
-  { id: 'andijon-asaka', regionId: 'andijon', labelUz: 'Asaka tumani' },
-  { id: 'qashqadaryo-qarshi', regionId: 'qashqadaryo', labelUz: 'Qarshi shahri' },
+  { id: 'yunusobod', regionId: 'toshkent', labelUz: 'Yunusobod' },
+  { id: 'chilonzor', regionId: 'toshkent', labelUz: 'Chilonzor' },
+  { id: 'sergeli', regionId: 'toshkent', labelUz: 'Sergeli' },
+  { id: 'mirzo-ulugbek', regionId: 'toshkent', labelUz: "Mirzo Ulug'bek" },
+  { id: 'shayxontohur', regionId: 'toshkent', labelUz: 'Shayxontohur' },
+  { id: 'uchtepa', regionId: 'toshkent', labelUz: 'Uchtepa' },
+  { id: 'yakkasaroy', regionId: 'toshkent', labelUz: 'Yakkasaroy' },
+  { id: 'olmazar', regionId: 'toshkent', labelUz: 'Olmazar' },
+  { id: 'bektemir', regionId: 'toshkent', labelUz: 'Bektemir' },
+  { id: 'markaz', regionId: 'samarkand', labelUz: 'Markaz' },
+  { id: 'juma', regionId: 'samarkand', labelUz: 'Juma' },
+  { id: 'urgut', regionId: 'samarkand', labelUz: 'Urgut' },
+  { id: 'kattaqorgon', regionId: 'samarkand', labelUz: "Kattaqo'rg'on" },
+  { id: 'payariq', regionId: 'samarkand', labelUz: 'Payariq' },
+  { id: 'pastdargom', regionId: 'samarkand', labelUz: "Pastdarg'om" },
+  { id: 'markaz', regionId: 'fargona', labelUz: 'Markaz' },
+  { id: 'qoqon', regionId: 'fargona', labelUz: "Qo'qon" },
+  { id: 'margilon', regionId: 'fargona', labelUz: "Marg'ilon" },
+  { id: 'rishton', regionId: 'fargona', labelUz: 'Rishton' },
+  { id: 'beshariq', regionId: 'fargona', labelUz: 'Beshariq' },
+  { id: 'dangara', regionId: 'fargona', labelUz: "Dang'ara" },
+  { id: 'markaz', regionId: 'buxoro', labelUz: 'Markaz' },
+  { id: 'kogon', regionId: 'buxoro', labelUz: 'Kogon' },
+  { id: 'romitan', regionId: 'buxoro', labelUz: 'Romitan' },
+  { id: 'vobkent', regionId: 'buxoro', labelUz: 'Vobkent' },
+  { id: 'markaz', regionId: 'namangan', labelUz: 'Markaz' },
+  { id: 'chortoq', regionId: 'namangan', labelUz: 'Chortoq' },
+  { id: 'chust', regionId: 'namangan', labelUz: 'Chust' },
+  { id: 'pop', regionId: 'namangan', labelUz: 'Pop' },
+  { id: 'markaz', regionId: 'andijon', labelUz: 'Markaz' },
+  { id: 'asaka', regionId: 'andijon', labelUz: 'Asaka' },
+  { id: 'shahrixon', regionId: 'andijon', labelUz: 'Shahrixon' },
+  { id: 'xojaobod', regionId: 'andijon', labelUz: "Xo'jaobod" },
+  { id: 'qarshi', regionId: 'qashqadaryo', labelUz: 'Qarshi' },
+  { id: 'shahrisabz', regionId: 'qashqadaryo', labelUz: 'Shahrisabz' },
+  { id: 'kitob', regionId: 'qashqadaryo', labelUz: 'Kitob' },
+  { id: 'guzor', regionId: 'qashqadaryo', labelUz: "G'uzor" },
 ];
 
 export const defaultLocation: UserLocation = {
   regionId: 'samarkand',
-  districtId: 'samarkand-juma',
-  labelUz: 'Samarqand, Juma tumani',
+  districtId: 'juma',
+  labelUz: 'Samarqand, Juma',
   source: 'manual',
 };
 
@@ -44,7 +71,7 @@ export const getDistrictsByRegion = (regionId: RegionId): District[] =>
 
 export const buildLocation = (regionId: RegionId, districtId: DistrictId): UserLocation => {
   const region = regions.find((item) => item.id === regionId);
-  const district = districts.find((item) => item.id === districtId);
+  const district = districts.find((item) => item.regionId === regionId && item.id === districtId);
 
   return {
     regionId,
@@ -54,22 +81,90 @@ export const buildLocation = (regionId: RegionId, districtId: DistrictId): UserL
   };
 };
 
+const normalizeText = (value: string): string =>
+  value
+    .toLowerCase()
+    .replaceAll('ʻ', "'")
+    .replaceAll('`', "'")
+    .replaceAll('’', "'")
+    .replaceAll('‘', "'")
+    .replaceAll('ʼ', "'")
+    .trim();
+
+export const slugifyDistrict = (value: string): DistrictId => {
+  const cleaned = normalizeText(value)
+    .replace(/\b(tumani|tuman|shahri|shahar|city|district|район|город)\b/g, '')
+    .replace(/[^a-z0-9\s'-]/g, '')
+    .replaceAll("'", '')
+    .replace(/\s+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  return cleaned || 'markaz';
+};
+
+export const mapStateToRegionId = (state: string): RegionId | undefined => {
+  const normalized = normalizeText(state)
+    .replace(/\b(viloyati|viloyat|shahri|respublikasi|province|region)\b/g, '')
+    .replace(/[^a-z0-9\s'-]/g, '')
+    .replaceAll("'", '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (normalized.includes('toshkent') || normalized.includes('tashkent')) {
+    return 'toshkent';
+  }
+
+  if (normalized.includes('samarqand') || normalized.includes('samarkand')) {
+    return 'samarkand';
+  }
+
+  if (normalized.includes('fargona') || normalized.includes('fergana')) {
+    return 'fargona';
+  }
+
+  if (normalized.includes('buxoro') || normalized.includes('bukhara')) {
+    return 'buxoro';
+  }
+
+  if (normalized.includes('namangan')) {
+    return 'namangan';
+  }
+
+  if (normalized.includes('andijon') || normalized.includes('andijan')) {
+    return 'andijon';
+  }
+
+  if (normalized.includes('qashqadaryo') || normalized.includes('kashkadarya')) {
+    return 'qashqadaryo';
+  }
+
+  return undefined;
+};
+
 export const inferLocationFromAddress = (address: Record<string, unknown>): UserLocation => {
-  const city = String(address.city ?? address.town ?? address.state ?? '').toLowerCase();
-  const district = String(address.county ?? address.suburb ?? address.city_district ?? '').toLowerCase();
-  const full = `${city} ${district}`;
+  const state = String(address.state ?? address.province ?? '');
+  const county = String(
+    address.county ??
+      address.city_district ??
+      address.suburb ??
+      address.town ??
+      address.city ??
+      address.village ??
+      'Markaz',
+  );
+  const regionId = mapStateToRegionId(state);
 
-  if (full.includes('toshkent') || full.includes('tashkent')) {
-    return { regionId: 'toshkent', districtId: 'toshkent-sergeli', labelUz: 'Toshkent, Sergeli tumani', source: 'gps' };
+  if (!regionId) {
+    throw new Error("GPS manzili qo'llab-quvvatlanmaydi");
   }
 
-  if (full.includes('farg') || full.includes('kokand') || full.includes('qo')) {
-    return { regionId: 'fargona', districtId: 'fargona-yaypan', labelUz: "Farg'ona, Yaypan tumani", source: 'gps' };
-  }
+  const regionLabel = getRegionLabel(regionId);
+  const districtLabel = county.replace(/\s+/g, ' ').trim() || 'Markaz';
 
-  if (full.includes('samarkand') || full.includes('samarqand') || full.includes('juma')) {
-    return { regionId: 'samarkand', districtId: 'samarkand-juma', labelUz: 'Samarqand, Juma tumani', source: 'gps' };
-  }
-
-  return { ...defaultLocation, source: 'gps' };
+  return {
+    regionId,
+    districtId: slugifyDistrict(districtLabel),
+    labelUz: `${regionLabel}, ${districtLabel}`,
+    source: 'gps',
+  };
 };
