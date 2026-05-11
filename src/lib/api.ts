@@ -238,13 +238,12 @@ export const createRequest = async (
     throw error ?? new Error('Request yaratilmadi');
   }
 
-  const { error: notificationError } = await supabase.functions.invoke('notify-drivers', {
+  // Non-blocking -- notification failure should not block request creation.
+  supabase.functions.invoke('notify-drivers', {
     body: { requestId: row.id },
+  }).catch((err: unknown) => {
+    console.warn('notify-drivers failed (non-fatal):', err);
   });
-
-  if (notificationError) {
-    throw notificationError;
-  }
 
   return row.id;
 };
@@ -374,13 +373,12 @@ export const selectDriver = async (requestId: string, driverId: string): Promise
     throw error;
   }
 
-  const { error: notificationError } = await supabase.functions.invoke('notify-passenger', {
+  // Non-blocking -- notification failure should not block driver selection.
+  supabase.functions.invoke('notify-passenger', {
     body: { requestId },
+  }).catch((err: unknown) => {
+    console.warn('notify-passenger failed (non-fatal):', err);
   });
-
-  if (notificationError) {
-    throw notificationError;
-  }
 };
 
 export const completeRequest = async (requestId: string): Promise<void> => {
