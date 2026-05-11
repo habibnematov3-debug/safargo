@@ -195,6 +195,11 @@ export const saveDriverProfile = async (
     car_model: carModel,
     car_year: carYear,
     phone,
+    is_verified: false,
+    is_premium: false,
+    rating_avg: 0,
+    rating_trips: 0,
+    badges: [],
   });
 
   if (error) {
@@ -489,20 +494,12 @@ export const submitRating = async (rating: {
   }
 };
 
-export const getDriverProfile = async (driverId: string): Promise<DriverProfile | null> => {
-  const { data, error } = await supabase
-    .from('users')
-    .select('id,name,driver_profiles(id,car_model,car_year,phone,is_verified,is_premium,rating_avg,rating_trips,badges)')
-    .eq('id', driverId)
-    .maybeSingle<DbUserRow>();
+export const getDriverProfile = async (userId: string): Promise<boolean> => {
+  const { data } = await supabase
+    .from('driver_profiles')
+    .select('id')
+    .eq('id', userId)
+    .single<{ id: string }>();
 
-  if (error) {
-    throw error;
-  }
-
-  if (!data) {
-    return null;
-  }
-
-  return toDriverProfile(data);
+  return Boolean(data);
 };

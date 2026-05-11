@@ -1,7 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bell, Check, X } from 'lucide-react';
 import { regions } from '../data/locations';
-import { applyToRequest, getMatchingRequests, saveDriverProfile, selectDriver } from '../lib/api';
+import {
+  applyToRequest,
+  getDriverProfile,
+  getMatchingRequests,
+  saveDriverProfile,
+  saveUser,
+  selectDriver,
+} from '../lib/api';
 import { supabase } from '../lib/supabase';
 import { getTelegramIdentity, hapticSuccess, hapticTap } from '../lib/telegram';
 import { useSafargoStore } from '../store/useSafargoStore';
@@ -13,8 +20,49 @@ type DriverScreenProps = {
   mode?: 'home' | 'new';
 };
 
+type DriverProfileSummary = {
+  name: string;
+  carModel: string;
+  carYear: number;
+  phone: string;
+  ratingAvg: number;
+  ratingTrips: number;
+};
+
+type DbDriverProfileSummary = {
+  car_model: string | null;
+  car_year: number | null;
+  phone: string | null;
+  rating_avg: number | string | null;
+  rating_trips: number | null;
+};
+
+type DbDriverUserSummary = {
+  name: string | null;
+};
+
+type ProfileFormErrors = {
+  name?: string;
+  phone?: string;
+  carModel?: string;
+  carYear?: string;
+};
+
+const carModels = ['Cobalt', 'Nexia 3', 'Gentra', 'Lacetti', 'Onix', 'Monza', 'Spark', 'Matiz', 'Damas', 'Boshqa'];
+
+const toNumber = (value: number | string | null | undefined): number => {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  return 0;
+};
+
 export const DriverScreen = ({ mode = 'new' }: DriverScreenProps) => {
   const location = useSafargoStore((state) => state.location);
+  const identity = useMemo(() => getTelegramIdentity(), []);
   const districtId = location?.districtId;
   const [requests, setRequests] = useState<PassengerRequest[]>([]);
   const [destinationRegionId, setDestinationRegionId] = useState<RegionId>('toshkent');
@@ -25,6 +73,74 @@ export const DriverScreen = ({ mode = 'new' }: DriverScreenProps) => {
   const [smoking, setSmoking] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [needsProfileSetup, setNeedsProfileSetup] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [driverProfile, setDriverProfile] = useState<DriverProfileSummary | null>(null);
+  const [driverName, setDriverName] = useState(identity.name);
+  const [phone, setPhone] = useState('+998 ');
+  const [profileCarModel, setProfileCarModel] = useState('');
+  const [profileCarYear, setProfileCarYear] = useState('');
+  const [carColor, setCarColor] = useState('');
+  const [profileErrors, setProfileErrors] = useState<ProfileFormErrors>({});
+
+  const loadDriverProfile = useCallback(async () => {
+    setProfileLoading(true);
+    setError('');
+
+    try {
+      const exists = await getDriverProfile(identity.id);
+
+      if (!exists) {
+        setNeedsProfileSetup(true);
+        setDriverProfile(null);
+        return;
+      }
+
+      const [{ data: profile, error: profileError }, { data: user, error: userError }] = await Promise.all([
+        supabase
+          .from('driver_profiles')
+          .select('car_model,car_year,phone,rating_avg,rating_trips')
+          .eq('id', identity.id)
+          .single<DbDriverProfileSummary>(),
+        supabase.from('users').select('name').eq('id', identity.id).maybeSingle<DbDriverUserSummary>(),
+      ]);
+
+      if (profileError) {
+        throw profileError;
+      }
+
+      if (userError) {
+        throw userError;
+      }
+
+      const summary: DriverProfileSummary = {
+        name: user?.name?.trim() || identity.name,
+        carModel: profile.car_model ?? 'Mashina',
+        carYear: profile.car_year ?? 2020,
+        phone: profile.phone ?? '',
+        ratingAvg: toNumber(profile.rating_avg),
+        ratingTrips: profile.rating_trips ?? 0,
+      };
+
+      setDriverProfile(summary);
+      setDriverName(summary.name);
+      setPhone(summary.phone || '+998 ');
+      setProfileCarModel(summary.carModel);
+      setProfileCarYear(String(summary.carYear));
+      setNeedsProfileSetup(false);
+    } catch (err) {
+      console.error('driver profile load error:', err);
+      setError("Xatolik. Qayta urinib ko'ring.");
+      setNeedsProfileSetup(true);
+    } finally {
+      setProfileLoading(false);
+    }
+  }, [identity.id, identity.name]);
+
+  useEffect(() => {
+    void loadDriverProfile();
+  }, [loadDriverProfile]);
 
   const loadIncomingRequests = useCallback(async () => {
     if (!districtId) {
@@ -88,13 +204,77 @@ export const DriverScreen = ({ mode = 'new' }: DriverScreenProps) => {
     setError('');
 
     try {
-      const identity = getTelegramIdentity();
-      await saveDriverProfile(identity.id, 'Noma\'lum', 2020, '+998 90 000 00 00');
       hapticSuccess();
-    } catch {
+    } catch (err) {
+      console.error('submitRide error:', err);
       setError("Xatolik. Qayta urinib ko'ring.");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const validateProfileForm = (): ProfileFormErrors => {
+    const errors: ProfileFormErrors = {};
+    const trimmedName = driverName.trim();
+    const trimmedPhone = phone.trim();
+    const phoneDigits = trimmedPhone.replace(/\D/g, '');
+    const year = Number(profileCarYear);
+
+    if (!trimmedName) {
+      errors.name = 'Ism familiyani kiriting';
+    }
+
+    if (!trimmedPhone.startsWith('+998') || phoneDigits.length !== 12 || !phoneDigits.startsWith('998')) {
+      errors.phone = "Telefon raqamni to'g'ri kiriting: +998 XX XXX XX XX";
+    }
+
+    if (!carModels.includes(profileCarModel)) {
+      errors.carModel = 'Mashina modelini tanlang';
+    }
+
+    if (!Number.isInteger(year) || year < 2000 || year > 2025) {
+      errors.carYear = 'Mashina yilini kiriting';
+    }
+
+    return errors;
+  };
+
+  const submitDriverProfile = async () => {
+    if (!location) {
+      setError("Joylashuv topilmadi. Qayta urinib ko'ring.");
+      return;
+    }
+
+    const errors = validateProfileForm();
+    setProfileErrors(errors);
+
+    if (Object.keys(errors).length > 0) {
+      return;
+    }
+
+    setSavingProfile(true);
+    setError('');
+
+    try {
+      const year = Number(profileCarYear);
+      await saveUser(identity.id, driverName.trim(), 'driver', location.regionId, location.districtId, location.labelUz);
+      await saveDriverProfile(identity.id, profileCarModel, year, phone.trim());
+
+      setDriverProfile({
+        name: driverName.trim(),
+        carModel: profileCarModel,
+        carYear: year,
+        phone: phone.trim(),
+        ratingAvg: 0,
+        ratingTrips: 0,
+      });
+      setNeedsProfileSetup(false);
+      hapticSuccess();
+    } catch (err) {
+      console.error('save driver profile error:', err);
+      setError("Profilni saqlashda xatolik. Qayta urinib ko'ring.");
+    } finally {
+      setSavingProfile(false);
     }
   };
 
@@ -150,8 +330,99 @@ export const DriverScreen = ({ mode = 'new' }: DriverScreenProps) => {
     }
   };
 
+  if (profileLoading) {
+    return (
+      <div className="safe-bottom flex flex-1 flex-col gap-4 px-5 py-5">
+        <Card>
+          <Spinner />
+          <p className="mt-2 text-center text-sm font-bold text-slate-600">Yuklanmoqda...</p>
+        </Card>
+      </div>
+    );
+  }
+
+  if (needsProfileSetup) {
+    return (
+      <div className="safe-bottom flex flex-1 flex-col gap-4 px-5 py-5">
+        <Card>
+          <h2 className="text-lg font-extrabold">Haydovchi profili</h2>
+          <p className="mt-1 text-sm font-bold text-slate-500">Safarni boshlash uchun ma'lumotlarni kiriting.</p>
+
+          <div className="mt-4 space-y-3">
+            <div>
+              <FieldLabel>Ism familiya</FieldLabel>
+              <Input value={driverName} onChange={(event) => setDriverName(event.target.value)} />
+              {profileErrors.name ? <p className="mt-1 text-xs font-bold text-red-500">{profileErrors.name}</p> : null}
+            </div>
+
+            <div>
+              <FieldLabel>Telefon raqam</FieldLabel>
+              <Input
+                inputMode="tel"
+                placeholder="+998 XX XXX XX XX"
+                value={phone}
+                onChange={(event) => setPhone(event.target.value)}
+              />
+              {profileErrors.phone ? <p className="mt-1 text-xs font-bold text-red-500">{profileErrors.phone}</p> : null}
+            </div>
+
+            <div>
+              <FieldLabel>Mashina modeli</FieldLabel>
+              <Select value={profileCarModel} onChange={(event) => setProfileCarModel(event.target.value)}>
+                <option value="">Tanlang</option>
+                {carModels.map((model) => (
+                  <option key={model} value={model}>
+                    {model}
+                  </option>
+                ))}
+              </Select>
+              {profileErrors.carModel ? <p className="mt-1 text-xs font-bold text-red-500">{profileErrors.carModel}</p> : null}
+            </div>
+
+            <div>
+              <FieldLabel>Mashina yili</FieldLabel>
+              <Input
+                inputMode="numeric"
+                min={2000}
+                max={2025}
+                placeholder="2020"
+                type="number"
+                value={profileCarYear}
+                onChange={(event) => setProfileCarYear(event.target.value)}
+              />
+              {profileErrors.carYear ? <p className="mt-1 text-xs font-bold text-red-500">{profileErrors.carYear}</p> : null}
+            </div>
+
+            <div>
+              <FieldLabel>Mashina rangi</FieldLabel>
+              <Input placeholder="Masalan: oq" value={carColor} onChange={(event) => setCarColor(event.target.value)} />
+            </div>
+
+            <Button className="w-full" onClick={() => void submitDriverProfile()} disabled={savingProfile}>
+              Profilni saqlash →
+            </Button>
+            {savingProfile ? <p className="text-xs font-bold text-slate-500">Yuklanmoqda...</p> : null}
+            {error ? <p className="text-xs font-bold text-red-500">{error}</p> : null}
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="safe-bottom flex flex-1 flex-col gap-4 px-5 py-5">
+      {driverProfile ? (
+        <Card>
+          <p className="text-lg font-extrabold">Salom, {driverProfile.name}! 👋</p>
+          <p className="mt-1 text-sm font-bold text-slate-600">
+            🚗 {driverProfile.carModel} {driverProfile.carYear}
+          </p>
+          <p className="mt-2 text-xs font-extrabold text-amber-500">
+            ⭐ {driverProfile.ratingAvg.toFixed(1)} · {driverProfile.ratingTrips} safar
+          </p>
+        </Card>
+      ) : null}
+
       {mode === 'new' ? (
         <Card>
           <h2 className="text-lg font-extrabold">E'lon berish</h2>
