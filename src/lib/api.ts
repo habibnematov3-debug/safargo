@@ -577,3 +577,88 @@ export const getDriverProfile = async (userId: string): Promise<boolean> => {
 
   return Boolean(data);
 };
+
+export const getPassengerStats = async (
+  passengerId: string,
+): Promise<{
+  total: number;
+  completed: number;
+  rated: number;
+}> => {
+  const [requests, ratings] = await Promise.all([
+    supabase
+      .from('passenger_requests')
+      .select('status')
+      .eq('passenger_id', passengerId),
+    supabase
+      .from('ratings')
+      .select('id')
+      .eq('passenger_id', passengerId),
+  ]);
+
+  const total = requests.data?.length ?? 0;
+  const completed = requests.data?.filter((r) => r.status === 'completed').length ?? 0;
+  const rated = ratings.data?.length ?? 0;
+
+  return { total, completed, rated };
+};
+
+export const getDriverStats = async (
+  driverId: string,
+): Promise<{
+  totalTrips: number;
+  thisMonth: number;
+  avgRating: number;
+  onTimePct: number;
+  carPct: number;
+  mannersPct: number;
+}> => {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+
+  const [profile, ratingsData, thisMonthData] = await Promise.all([
+    supabase
+      .from('driver_profiles')
+      .select('rating_avg, rating_trips')
+      .eq('id', driverId)
+      .single<{ rating_avg: number | string | null; rating_trips: number | null }>(),
+    supabase
+      .from('ratings')
+      .select('stars, on_time, car, manners')
+      .eq('driver_id', driverId)
+      .returns<{ stars?: number; on_time?: number; car?: number; manners?: number }[]>(),
+    supabase
+      .from('passenger_requests')
+      .select('id')
+      .eq('selected_driver_id', driverId)
+      .eq('status', 'completed')
+      .gte('created_at', monthStart),
+  ]);
+
+  const ratings = ratingsData.data ?? [];
+  const avg = (field: 'on_time' | 'car' | 'manners' | 'stars'): number => {
+    if (ratings.length === 0) return 0;
+    const sum = ratings.reduce((s: number, r: Record<string, number | undefined>) => {
+      const val = r[field] ?? 0;
+      return s + val;
+    }, 0);
+    return Math.round((sum / ratings.length) * 20);
+  };
+
+  return {
+    totalTrips: profile.data?.rating_trips ?? 0,
+    thisMonth: thisMonthData.data?.length ?? 0,
+    avgRating: toNumber(profile.data?.rating_avg, 0),
+    onTimePct: avg('on_time'),
+    carPct: avg('car'),
+    mannersPct: avg('manners'),
+  };
+};
+
+export const updateUserRole = async (userId: string, role: UserRole): Promise<void> => {
+  const { error } = await supabase.from('users').update({ role }).eq('id', userId);
+
+  if (error) {
+    throw error;
+  }
+};
