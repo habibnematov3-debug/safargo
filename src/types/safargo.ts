@@ -1,5 +1,7 @@
 export type UserRole = 'driver' | 'passenger';
 
+export type TabKey = 'home' | 'orders' | 'rating' | 'profile';
+
 export type RegionId =
   | 'toshkent'
   | 'samarkand'

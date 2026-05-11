@@ -129,6 +129,7 @@ serve(async (req) => {
 Yaxshi safar! 🙏`;
 
     await sendTelegramMessage(getEnv('TELEGRAM_BOT_TOKEN'), passenger.telegram_chat_id, message);
+    // TODO: rating reminder
 
     return jsonResponse({ ok: true });
   } catch (error) {

@@ -3,17 +3,17 @@ import { EntryScreen } from './screens/EntryScreen';
 import { DriverScreen } from './screens/DriverScreen';
 import { PassengerScreen } from './screens/PassengerScreen';
 import { OrdersScreen } from './screens/OrdersScreen';
+import { RatingScreen } from './screens/RatingScreen';
 import { useSafargoStore } from './store/useSafargoStore';
 import { hapticTap, initTelegram, getTelegramIdentity } from './lib/telegram';
-import { saveUser } from './lib/api';
+import { getPendingRatings, saveUser } from './lib/api';
 import { Card, Spinner } from './components/ui';
+import type { TabKey } from './types/safargo';
 
-type MainTab = 'home' | 'new' | 'orders' | 'profile';
-
-const tabs: { id: MainTab; icon: string; label: string }[] = [
+const tabs: { id: TabKey; icon: string; label: string }[] = [
   { id: 'home', icon: '🏠', label: 'Bosh sahifa' },
-  { id: 'new', icon: '➕', label: 'Yangi' },
   { id: 'orders', icon: '📋', label: 'Arizalarim' },
+  { id: 'rating', icon: '⭐', label: 'Baholash' },
   { id: 'profile', icon: '👤', label: 'Profil' },
 ];
 
@@ -24,7 +24,8 @@ export default function App() {
   const error = useSafargoStore((state) => state.error);
   const initializeApp = useSafargoStore((state) => state.initializeApp);
   const clearRealtime = useSafargoStore((state) => state.clearRealtime);
-  const [mainTab, setMainTab] = useState<MainTab>('home');
+  const [mainTab, setMainTab] = useState<TabKey>('home');
+  const [pendingRatingCount, setPendingRatingCount] = useState(0);
 
   useEffect(() => {
     initTelegram();
@@ -66,16 +67,37 @@ export default function App() {
 
   const isMainApp = Boolean(confirmedLocation && role);
 
+  useEffect(() => {
+    const loadPendingCount = async () => {
+      if (!isMainApp || role !== 'passenger') {
+        setPendingRatingCount(0);
+        return;
+      }
+
+      try {
+        const identity = getTelegramIdentity();
+        const pending = await getPendingRatings(identity.id);
+        setPendingRatingCount(pending.length);
+      } catch (err) {
+        console.warn('Failed to load pending ratings:', err);
+      }
+    };
+
+    void loadPendingCount();
+  }, [isMainApp, mainTab, role]);
+
   const content = !isMainApp ? (
     <EntryScreen />
   ) : mainTab === 'orders' ? (
-    <OrdersScreen />
+    <OrdersScreen onOpenRating={() => setMainTab('rating')} />
+  ) : mainTab === 'rating' ? (
+    <RatingScreen onPendingCountChange={setPendingRatingCount} />
   ) : mainTab === 'profile' ? (
     <ProfileScreen />
   ) : role === 'passenger' ? (
-    <PassengerScreen mode={mainTab === 'home' ? 'home' : 'new'} />
+    <PassengerScreen mode="home" />
   ) : (
-    <DriverScreen mode={mainTab === 'home' ? 'home' : 'new'} />
+    <DriverScreen mode="home" />
   );
 
   return (
@@ -107,7 +129,7 @@ export default function App() {
 
       <div className="flex-1">{content}</div>
 
-      {isMainApp ? <BottomNav activeTab={mainTab} onChange={setMainTab} /> : null}
+      {isMainApp ? <BottomNav activeTab={mainTab} onChange={setMainTab} pendingRatingCount={pendingRatingCount} /> : null}
     </main>
   );
 }
@@ -115,9 +137,11 @@ export default function App() {
 const BottomNav = ({
   activeTab,
   onChange,
+  pendingRatingCount,
 }: {
-  activeTab: MainTab;
-  onChange: (tab: MainTab) => void;
+  activeTab: TabKey;
+  onChange: (tab: TabKey) => void;
+  pendingRatingCount: number;
 }) => (
   <nav className="sticky bottom-0 z-20 grid grid-cols-4 border-t border-blue-50 bg-white/95 px-2 pb-3 pt-2 backdrop-blur">
     {tabs.map((tab) => (
@@ -131,7 +155,14 @@ const BottomNav = ({
           onChange(tab.id);
         }}
       >
-        <span className="block text-lg leading-5">{tab.icon}</span>
+        <span className="relative mx-auto block w-fit text-lg leading-5">
+          {tab.icon}
+          {tab.id === 'rating' && pendingRatingCount > 0 ? (
+            <span className="absolute -right-3 -top-2 grid min-h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] leading-4 text-white">
+              {pendingRatingCount}
+            </span>
+          ) : null}
+        </span>
         <span>{tab.label}</span>
       </button>
     ))}

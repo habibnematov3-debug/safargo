@@ -64,6 +64,28 @@ type DbUserRow = {
   driver_profiles: DbDriverProfile | DbDriverProfile[] | null;
 };
 
+type DbRatingRow = {
+  request_id: string;
+};
+
+type PendingRatingRequestRow = Pick<
+  DbPassengerRequest,
+  'id' | 'origin_label' | 'destination_region_id' | 'date_iso' | 'selected_driver_id' | 'created_at'
+>;
+
+type DbUserNameRow = {
+  id: string;
+  name: string;
+};
+
+export type PendingRating = {
+  id: string;
+  tripLabelUz: string;
+  driverId: string;
+  driverName: string;
+  completedAtISO: string;
+};
+
 const toPassengerPreferences = (values: string[] | null): PassengerPreference[] =>
   (values ?? []).filter((item): item is PassengerPreference =>
     PASSENGER_PREFERENCES.includes(item as PassengerPreference),
@@ -444,53 +466,105 @@ export const completeRequest = async (requestId: string): Promise<void> => {
   }
 };
 
-export const submitRating = async (rating: {
-  requestId: string;
-  driverId: string;
-  passengerId: string;
-  stars: number;
-  onTime: number;
-  car: number;
-  manners: number;
-  comment?: string;
-}): Promise<void> => {
-  const { error: ratingError } = await supabase.from('ratings').insert({
-    request_id: rating.requestId,
-    driver_id: rating.driverId,
-    passenger_id: rating.passengerId,
-    stars: rating.stars,
-    on_time: rating.onTime,
-    car: rating.car,
-    manners: rating.manners,
-    comment: rating.comment ?? null,
-  });
+export const completeRide = async (requestId: string): Promise<void> => {
+  const { error } = await supabase
+    .from('passenger_requests')
+    .update({ status: 'completed' })
+    .eq('id', requestId);
 
-  if (ratingError) {
-    throw ratingError;
+  if (error) {
+    throw error;
+  }
+};
+
+export const getPendingRatings = async (passengerId: string): Promise<PendingRating[]> => {
+  const { data: requestRows, error: requestsError } = await supabase
+    .from('passenger_requests')
+    .select('id,origin_label,destination_region_id,date_iso,selected_driver_id,created_at')
+    .eq('passenger_id', passengerId)
+    .eq('status', 'completed')
+    .order('created_at', { ascending: false })
+    .returns<PendingRatingRequestRow[]>();
+
+  if (requestsError) {
+    throw requestsError;
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from('driver_profiles')
-    .select('rating_avg,rating_trips')
-    .eq('id', rating.driverId)
-    .single<{ rating_avg: number | string | null; rating_trips: number | null }>();
+  const requests = (requestRows ?? []).filter((request) => Boolean(request.selected_driver_id));
 
-  if (profileError && profileError.code !== 'PGRST116') {
-    throw profileError;
+  if (requests.length === 0) {
+    return [];
   }
 
-  const trips = (profile?.rating_trips ?? 0) + 1;
-  const currentAvg = toNumber(profile?.rating_avg, 0);
-  const avg = Number(((currentAvg * (trips - 1) + rating.stars) / trips).toFixed(1));
+  const requestIds = requests.map((request) => request.id);
+  const { data: ratingRows, error: ratingsError } = await supabase
+    .from('ratings')
+    .select('request_id')
+    .in('request_id', requestIds)
+    .eq('passenger_id', passengerId)
+    .returns<DbRatingRow[]>();
 
-  const { error: updateError } = await supabase.from('driver_profiles').upsert({
-    id: rating.driverId,
-    rating_avg: avg,
-    rating_trips: trips,
+  if (ratingsError) {
+    throw ratingsError;
+  }
+
+  const ratedRequestIds = new Set((ratingRows ?? []).map((rating) => rating.request_id));
+  const pendingRequests = requests.filter((request) => !ratedRequestIds.has(request.id));
+  const driverIds = Array.from(
+    new Set(
+      pendingRequests
+        .map((request) => request.selected_driver_id)
+        .filter((driverId): driverId is string => Boolean(driverId)),
+    ),
+  );
+
+  let driverNames = new Map<string, string>();
+  if (driverIds.length > 0) {
+    const { data: users, error: usersError } = await supabase
+      .from('users')
+      .select('id,name')
+      .in('id', driverIds)
+      .returns<DbUserNameRow[]>();
+
+    if (usersError) {
+      throw usersError;
+    }
+
+    driverNames = new Map((users ?? []).map((user) => [user.id, user.name]));
+  }
+
+  return pendingRequests.map((request) => ({
+    id: request.id,
+    tripLabelUz: `${request.origin_label} → ${request.destination_region_id}`,
+    driverId: request.selected_driver_id ?? '',
+    driverName: driverNames.get(request.selected_driver_id ?? '') ?? 'Haydovchi',
+    completedAtISO: request.date_iso,
+  }));
+};
+
+export const submitRating = async (
+  requestId: string,
+  driverId: string,
+  passengerId: string,
+  stars: number,
+  onTime: number,
+  car: number,
+  manners: number,
+  comment?: string,
+): Promise<void> => {
+  const { error } = await supabase.from('ratings').insert({
+    request_id: requestId,
+    driver_id: driverId,
+    passenger_id: passengerId,
+    stars,
+    on_time: onTime,
+    car,
+    manners,
+    comment: comment ?? null,
   });
 
-  if (updateError) {
-    throw updateError;
+  if (error) {
+    throw error;
   }
 };
 
