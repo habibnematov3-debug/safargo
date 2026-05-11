@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { RealtimeChannel } from '@supabase/supabase-js';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Star } from 'lucide-react';
 import { regions } from '../data/locations';
-import { completeRequest, createRequest, getMyRequests, selectDriver, submitRating } from '../lib/api';
+import { completeRequest, createRequest, getMyRequests, saveUser, selectDriver, submitRating } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import { getTelegramIdentity, hapticSuccess } from '../lib/telegram';
 import { regionDefaults, useSafargoStore } from '../store/useSafargoStore';
@@ -22,7 +21,11 @@ type PassengerView =
   | { name: 'applicants'; requestId: string }
   | { name: 'confirmation'; requestId: string; driverId: string };
 
-export const PassengerScreen = () => {
+type PassengerScreenProps = {
+  mode?: 'home' | 'new';
+};
+
+export const PassengerScreen = ({ mode = 'new' }: PassengerScreenProps) => {
   const location = useSafargoStore((state) => state.location);
   const [requests, setRequests] = useState<PassengerRequest[]>([]);
   const [drivers, setDrivers] = useState<DriverProfile[]>([]);
@@ -38,9 +41,9 @@ export const PassengerScreen = () => {
   const [error, setError] = useState('');
   const [ratingTargetRequestId, setRatingTargetRequestId] = useState<string | undefined>();
 
-  const passengerIdentity = getTelegramIdentity();
+  const passengerIdentity = useMemo(() => getTelegramIdentity(), []);
 
-  const loadRequests = async () => {
+  const loadMyRequests = useCallback(async () => {
     setIsLoading(true);
     setError('');
 
@@ -48,46 +51,50 @@ export const PassengerScreen = () => {
       const data = await getMyRequests(passengerIdentity.id);
       setRequests(data.requests);
       setDrivers(data.drivers);
-    } catch {
+    } catch (err) {
+      console.error('loadMyRequests error:', err);
       setError("Xatolik. Qayta urinib ko'ring.");
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [passengerIdentity.id]);
 
   useEffect(() => {
-    void loadRequests();
-  }, []);
+    void loadMyRequests();
+  }, [loadMyRequests]);
 
   useEffect(() => {
-    if (requests.length === 0) {
-      return undefined;
-    }
-
-    const channels: RealtimeChannel[] = requests.map((request) =>
-      supabase
-        .channel(`new-applications-${request.id}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'driver_applications',
-            filter: `request_id=eq.${request.id}`,
-          },
-          () => {
-            void loadRequests();
-          },
-        )
-        .subscribe(),
-    );
+    const channel = supabase
+      .channel('my-applications')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'driver_applications',
+        },
+        () => {
+          void loadMyRequests();
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'passenger_requests',
+          filter: `passenger_id=eq.${passengerIdentity.id}`,
+        },
+        () => {
+          void loadMyRequests();
+        },
+      )
+      .subscribe();
 
     return () => {
-      channels.forEach((channel) => {
-        void supabase.removeChannel(channel);
-      });
+      void supabase.removeChannel(channel);
     };
-  }, [requests]);
+  }, [loadMyRequests, passengerIdentity.id]);
 
   const activeRequests = requests.filter((request) => request.status !== 'cancelled');
   const selectedRequest =
@@ -115,7 +122,16 @@ export const PassengerScreen = () => {
             ? new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
             : pickedDate;
 
-      await createRequest(
+      await saveUser(
+        passengerIdentity.id,
+        passengerIdentity.name,
+        'passenger',
+        location.regionId,
+        location.districtId,
+        location.labelUz,
+      );
+
+      const requestId = await createRequest(
         passengerIdentity.id,
         passengerIdentity.name,
         location.regionId,
@@ -127,9 +143,11 @@ export const PassengerScreen = () => {
         seats,
         preferences,
       );
-      await loadRequests();
+      console.log('Request created:', requestId);
+      await loadMyRequests();
       hapticSuccess();
-    } catch {
+    } catch (err) {
+      console.error('createRequest error:', err);
       setError("Xatolik. Qayta urinib ko'ring.");
     } finally {
       setIsLoading(false);
@@ -142,10 +160,11 @@ export const PassengerScreen = () => {
 
     try {
       await selectDriver(requestId, driverId);
-      await loadRequests();
+      await loadMyRequests();
       setView({ name: 'confirmation', requestId, driverId });
       hapticSuccess();
-    } catch {
+    } catch (err) {
+      console.error('selectDriver error:', err);
       setError("Xatolik. Qayta urinib ko'ring.");
     } finally {
       setIsLoading(false);
@@ -158,10 +177,11 @@ export const PassengerScreen = () => {
 
     try {
       await completeRequest(requestId);
-      await loadRequests();
+      await loadMyRequests();
       setRatingTargetRequestId(requestId);
       hapticSuccess();
-    } catch {
+    } catch (err) {
+      console.error('completeRequest error:', err);
       setError("Xatolik. Qayta urinib ko'ring.");
     } finally {
       setIsLoading(false);
@@ -183,9 +203,10 @@ export const PassengerScreen = () => {
         manners: stars,
       });
       setRatingTargetRequestId(undefined);
-      await loadRequests();
+      await loadMyRequests();
       hapticSuccess();
-    } catch {
+    } catch (err) {
+      console.error('submitRating error:', err);
       setError("Xatolik. Qayta urinib ko'ring.");
     } finally {
       setIsLoading(false);
@@ -268,9 +289,10 @@ export const PassengerScreen = () => {
 
   return (
     <div className="safe-bottom flex flex-1 flex-col gap-4 px-5 py-5">
-      <Card>
-        <h2 className="text-lg font-extrabold">So'rov yuborish</h2>
-        <div className="mt-4 space-y-3">
+      {mode === 'new' ? (
+        <Card>
+          <h2 className="text-lg font-extrabold">So'rov yuborish</h2>
+          <div className="mt-4 space-y-3">
           <div>
             <FieldLabel>Qayerga</FieldLabel>
             <Select value={destinationRegionId} onChange={(event) => setDestinationRegionId(event.target.value as RegionId)}>
@@ -349,10 +371,11 @@ export const PassengerScreen = () => {
           </Button>
           {isLoading ? <p className="text-xs font-bold text-slate-500">Yuklanmoqda...</p> : null}
           {error ? <p className="text-xs font-bold text-red-500">Xatolik. Qayta urinib ko'ring.</p> : null}
-        </div>
-      </Card>
+          </div>
+        </Card>
+      ) : null}
 
-      {ratingRequest?.selectedDriverId ? (
+      {mode === 'home' && ratingRequest?.selectedDriverId ? (
         <Card>
           <h2 className="text-lg font-extrabold">Haydovchini baholang</h2>
           <div className="mt-3 flex gap-1">
@@ -368,8 +391,9 @@ export const PassengerScreen = () => {
         </Card>
       ) : null}
 
-      <section>
-        <h2 className="mb-3 text-lg font-extrabold">Mening faol so'rovlarim</h2>
+      {mode === 'home' ? (
+        <section>
+          <h2 className="mb-3 text-lg font-extrabold">Mening faol so'rovlarim</h2>
         <div className="space-y-3">
           {isLoading && activeRequests.length === 0 ? (
             <Card>
@@ -379,7 +403,7 @@ export const PassengerScreen = () => {
           ) : error ? (
             <EmptyState title="Xatolik" text="Xatolik. Qayta urinib ko'ring." />
           ) : activeRequests.length === 0 ? (
-            <EmptyState title="Hozircha so'rovlar yo'q" text="Yangi safar uchun so'rov yuboring." />
+            <EmptyState title="Hali so'rovlar yo'q" text="Yangi so'rov yuborish uchun + tugmasini bosing" />
           ) : (
             activeRequests.map((request) => (
               <PassengerRequestCard
@@ -390,7 +414,8 @@ export const PassengerScreen = () => {
             ))
           )}
         </div>
-      </section>
+        </section>
+      ) : null}
     </div>
   );
 };

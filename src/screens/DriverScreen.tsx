@@ -1,17 +1,21 @@
-import { useEffect, useState } from 'react';
-import type { RealtimeChannel } from '@supabase/supabase-js';
+import { useCallback, useEffect, useState } from 'react';
 import { Bell, Check, X } from 'lucide-react';
 import { regions } from '../data/locations';
 import { applyToRequest, getMatchingRequests, saveDriverProfile, selectDriver } from '../lib/api';
 import { supabase } from '../lib/supabase';
-import { getTelegramIdentity, hapticSuccess } from '../lib/telegram';
+import { getTelegramIdentity, hapticSuccess, hapticTap } from '../lib/telegram';
 import { useSafargoStore } from '../store/useSafargoStore';
 import type { DriverApplication, PassengerRequest, RegionId } from '../types/safargo';
 import { Button, Card, EmptyState, FieldLabel, Input, Pill, Select, Spinner } from '../components/ui';
 import { preferenceLabel, requestRoute } from '../utils/format';
 
-export const DriverScreen = () => {
+type DriverScreenProps = {
+  mode?: 'home' | 'new';
+};
+
+export const DriverScreen = ({ mode = 'new' }: DriverScreenProps) => {
   const location = useSafargoStore((state) => state.location);
+  const districtId = location?.districtId;
   const [requests, setRequests] = useState<PassengerRequest[]>([]);
   const [destinationRegionId, setDestinationRegionId] = useState<RegionId>('toshkent');
   const [departureWindow, setDepartureWindow] = useState<DriverApplication['departureWindow']>('Hozir');
@@ -22,34 +26,38 @@ export const DriverScreen = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const loadRequests = async (districtId: string) => {
+  const loadIncomingRequests = useCallback(async () => {
+    if (!districtId) {
+      setRequests([]);
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     setError('');
 
     try {
       const data = await getMatchingRequests(districtId);
       setRequests(data);
-    } catch {
+    } catch (err) {
+      console.error('loadIncomingRequests error:', err);
       setError("Xatolik. Qayta urinib ko'ring.");
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [districtId]);
 
   useEffect(() => {
-    const districtId = location?.districtId;
-
     if (!districtId) {
       setRequests([]);
       setIsLoading(false);
       return undefined;
     }
 
-    let active = true;
-    void loadRequests(districtId);
+    void loadIncomingRequests();
 
-    const channel: RealtimeChannel = supabase
-      .channel('new-requests')
+    const channel = supabase
+      .channel('incoming-requests')
       .on(
         'postgres_changes',
         {
@@ -59,18 +67,15 @@ export const DriverScreen = () => {
           filter: `origin_district_id=eq.${districtId}`,
         },
         () => {
-          if (active) {
-            void loadRequests(districtId);
-          }
+          void loadIncomingRequests();
         },
       )
       .subscribe();
 
     return () => {
-      active = false;
       void supabase.removeChannel(channel);
     };
-  }, [location?.districtId]);
+  }, [districtId, loadIncomingRequests]);
 
   const incomingRequests = requests.filter((request) => request.status === 'active');
 
@@ -93,8 +98,8 @@ export const DriverScreen = () => {
     }
   };
 
-  const accept = async (requestId: string) => {
-    if (!location) {
+  const handleAccept = async (requestId: string) => {
+    if (!districtId) {
       return;
     }
 
@@ -103,16 +108,43 @@ export const DriverScreen = () => {
 
     try {
       const identity = getTelegramIdentity();
-      await applyToRequest(requestId, {
+      hapticSuccess();
+      await selectDriver(requestId, identity.id);
+      applyToRequest(requestId, {
         driverId: identity.id,
         pricePerSeat: Number(pricePerSeat) || 0,
         departureWindow,
+      }).catch((err: unknown) => {
+        console.warn('applyToRequest failed (non-fatal):', err);
       });
-      await selectDriver(requestId, identity.id);
-      await loadRequests(location.districtId);
-      hapticSuccess();
-    } catch {
-      setError("Xatolik. Qayta urinib ko'ring.");
+      await loadIncomingRequests();
+    } catch (err) {
+      console.error('Accept error:', err);
+      setError('Qabul qilishda xatolik');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleReject = async (requestId: string) => {
+    setIsLoading(true);
+    setError('');
+
+    try {
+      hapticTap();
+      const { error: rejectError } = await supabase
+        .from('passenger_requests')
+        .update({ status: 'cancelled' })
+        .eq('id', requestId);
+
+      if (rejectError) {
+        throw rejectError;
+      }
+
+      await loadIncomingRequests();
+    } catch (err) {
+      console.error('Reject error:', err);
+      setError("Rad etishda xatolik");
     } finally {
       setIsLoading(false);
     }
@@ -120,9 +152,10 @@ export const DriverScreen = () => {
 
   return (
     <div className="safe-bottom flex flex-1 flex-col gap-4 px-5 py-5">
-      <Card>
-        <h2 className="text-lg font-extrabold">E'lon berish</h2>
-        <div className="mt-4 space-y-3">
+      {mode === 'new' ? (
+        <Card>
+          <h2 className="text-lg font-extrabold">E'lon berish</h2>
+          <div className="mt-4 space-y-3">
           <div>
             <FieldLabel>Qayerdan</FieldLabel>
             <div className="rounded-2xl bg-slate-50 px-3 py-4 text-sm font-extrabold">{location?.labelUz}</div>
@@ -193,10 +226,12 @@ export const DriverScreen = () => {
           </Button>
           {isLoading ? <p className="text-xs font-bold text-slate-500">Yuklanmoqda...</p> : null}
           {error ? <p className="text-xs font-bold text-red-500">Xatolik. Qayta urinib ko'ring.</p> : null}
-        </div>
-      </Card>
+          </div>
+        </Card>
+      ) : null}
 
-      <section>
+      {mode === 'home' ? (
+        <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-extrabold">Kelgan so'rovlar</h2>
           <Pill tone="blue">{incomingRequests.length} ta</Pill>
@@ -210,19 +245,20 @@ export const DriverScreen = () => {
           ) : error ? (
             <EmptyState title="Xatolik" text="Xatolik. Qayta urinib ko'ring." />
           ) : incomingRequests.length === 0 ? (
-            <EmptyState title="Hozircha so'rovlar yo'q" text="Sizning tumaningizdan yo'lovchi chiqsa shu yerda ko'rinadi." />
+            <EmptyState title="Hozircha so'rovlar yo'q" text="Yangilanishlarni kuting..." />
           ) : (
             incomingRequests.map((request) => (
               <IncomingRequestCard
                 key={request.id}
                 request={request}
-                onAccept={() => void accept(request.id)}
-                onReject={() => setRequests((current) => current.filter((item) => item.id !== request.id))}
+                onAccept={() => void handleAccept(request.id)}
+                onReject={() => void handleReject(request.id)}
               />
             ))
           )}
         </div>
-      </section>
+        </section>
+      ) : null}
     </div>
   );
 };

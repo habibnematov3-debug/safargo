@@ -52,7 +52,10 @@ export const EntryScreen = () => {
     detect();
   }, [setLocation]);
 
-  const persistUser = async (nextRole: UserRole, nextLocation: { regionId: RegionId; districtId: DistrictId; labelUz: string }) => {
+  const persistUser = async (
+    nextRole: UserRole,
+    nextLocation: { regionId: RegionId; districtId: DistrictId; labelUz: string },
+  ): Promise<boolean> => {
     setSavingUser(true);
     setError('');
 
@@ -62,8 +65,11 @@ export const EntryScreen = () => {
       const userName = tgUser?.first_name ?? 'Foydalanuvchi';
 
       await saveUser(userId, userName, nextRole, nextLocation.regionId, nextLocation.districtId, nextLocation.labelUz);
-    } catch {
+      return true;
+    } catch (err) {
+      console.error('saveUser error:', err);
       setError("Xatolik. Qayta urinib ko'ring.");
+      return false;
     } finally {
       setSavingUser(false);
     }
@@ -75,9 +81,12 @@ export const EntryScreen = () => {
       : availableDistricts[0]?.id ?? districts[0].id;
     const nextLocation = buildLocation(regionId, nextDistrictId);
     setLocation(nextLocation);
-    await persistUser(role ?? 'passenger', nextLocation);
-    confirmLocation();
-    setManual(false);
+    const saved = await persistUser(role ?? 'passenger', nextLocation);
+
+    if (saved) {
+      confirmLocation();
+      setManual(false);
+    }
   };
 
   const confirmGpsLocation = async () => {
@@ -88,8 +97,11 @@ export const EntryScreen = () => {
 
   const chooseRole = async (nextRole: UserRole) => {
     const nextLocation = location ?? defaultLocation;
-    await persistUser(nextRole, nextLocation);
-    setRole(nextRole);
+    const saved = await persistUser(nextRole, nextLocation);
+
+    if (saved) {
+      setRole(nextRole);
+    }
   };
 
   return (

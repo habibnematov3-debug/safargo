@@ -363,6 +363,53 @@ export const getMyRequests = async (
   };
 };
 
+export type DriverOrder = {
+  request: PassengerRequest;
+  priceEarned: number;
+};
+
+export const getDriverOrders = async (driverId: string): Promise<DriverOrder[]> => {
+  const { data: requestRows, error: requestsError } = await supabase
+    .from('passenger_requests')
+    .select('*')
+    .eq('selected_driver_id', driverId)
+    .in('status', ['confirmed', 'completed'])
+    .order('created_at', { ascending: false })
+    .returns<DbPassengerRequest[]>();
+
+  if (requestsError) {
+    throw requestsError;
+  }
+
+  const requests = requestRows ?? [];
+  const requestIds = requests.map((request) => request.id);
+
+  if (requestIds.length === 0) {
+    return [];
+  }
+
+  const { data: applicationRows, error: appsError } = await supabase
+    .from('driver_applications')
+    .select('*')
+    .eq('driver_id', driverId)
+    .in('request_id', requestIds)
+    .returns<DbDriverApplication[]>();
+
+  if (appsError) {
+    throw appsError;
+  }
+
+  const priceByRequest = new Map<string, number>();
+  (applicationRows ?? []).forEach((application) => {
+    priceByRequest.set(application.request_id, application.price_per_seat);
+  });
+
+  return requests.map((request) => ({
+    request: toPassengerRequest(request, []),
+    priceEarned: (priceByRequest.get(request.id) ?? 0) * request.seats,
+  }));
+};
+
 export const selectDriver = async (requestId: string, driverId: string): Promise<void> => {
   const { error } = await supabase
     .from('passenger_requests')
