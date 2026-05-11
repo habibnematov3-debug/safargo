@@ -4,7 +4,8 @@ import { DriverScreen } from './screens/DriverScreen';
 import { PassengerScreen } from './screens/PassengerScreen';
 import { OrdersScreen } from './screens/OrdersScreen';
 import { useSafargoStore } from './store/useSafargoStore';
-import { hapticTap, initTelegram } from './lib/telegram';
+import { hapticTap, initTelegram, getTelegramIdentity } from './lib/telegram';
+import { saveUser } from './lib/api';
 import { Card, Spinner } from './components/ui';
 
 type MainTab = 'home' | 'new' | 'orders' | 'profile';
@@ -33,6 +34,31 @@ export default function App() {
       clearRealtime();
     };
   }, [clearRealtime, initializeApp]);
+
+  // Persist user on app mount to ensure they exist in DB before any requests
+  useEffect(() => {
+    const persistUser = async () => {
+      try {
+        const { id, name } = getTelegramIdentity();
+        const stored = useSafargoStore.getState();
+
+        if (stored.role && stored.confirmedLocation && stored.location) {
+          await saveUser(
+            id,
+            name,
+            stored.role,
+            stored.location.regionId,
+            stored.location.districtId,
+            stored.location.labelUz,
+          );
+        }
+      } catch (err) {
+        console.warn('Failed to persist user on mount:', err);
+      }
+    };
+
+    void persistUser();
+  }, []);
 
   useEffect(() => {
     setMainTab('home');

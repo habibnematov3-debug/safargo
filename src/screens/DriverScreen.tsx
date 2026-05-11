@@ -76,6 +76,7 @@ export const DriverScreen = ({ mode = 'new' }: DriverScreenProps) => {
   const [profileLoading, setProfileLoading] = useState(true);
   const [needsProfileSetup, setNeedsProfileSetup] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
+    const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [driverProfile, setDriverProfile] = useState<DriverProfileSummary | null>(null);
   const [driverName, setDriverName] = useState(identity.name);
   const [phone, setPhone] = useState('+998 ');
@@ -283,35 +284,32 @@ export const DriverScreen = ({ mode = 'new' }: DriverScreenProps) => {
       return;
     }
 
-    setIsLoading(true);
+    setActionLoading(requestId);
     setError('');
 
     try {
       const identity = getTelegramIdentity();
-      hapticSuccess();
       await selectDriver(requestId, identity.id);
-      applyToRequest(requestId, {
+      await applyToRequest(requestId, {
         driverId: identity.id,
         pricePerSeat: Number(pricePerSeat) || 0,
         departureWindow,
-      }).catch((err: unknown) => {
-        console.warn('applyToRequest failed (non-fatal):', err);
       });
+      hapticSuccess();
       await loadIncomingRequests();
     } catch (err) {
       console.error('Accept error:', err);
       setError('Qabul qilishda xatolik');
     } finally {
-      setIsLoading(false);
+      setActionLoading(null);
     }
   };
 
   const handleReject = async (requestId: string) => {
-    setIsLoading(true);
+    setActionLoading(requestId);
     setError('');
 
     try {
-      hapticTap();
       const { error: rejectError } = await supabase
         .from('passenger_requests')
         .update({ status: 'cancelled' })
@@ -321,12 +319,13 @@ export const DriverScreen = ({ mode = 'new' }: DriverScreenProps) => {
         throw rejectError;
       }
 
+      hapticTap();
       await loadIncomingRequests();
     } catch (err) {
       console.error('Reject error:', err);
-      setError("Rad etishda xatolik");
+      setError('Rad etishda xatolik');
     } finally {
-      setIsLoading(false);
+      setActionLoading(null);
     }
   };
 
@@ -524,6 +523,7 @@ export const DriverScreen = ({ mode = 'new' }: DriverScreenProps) => {
                 request={request}
                 onAccept={() => void handleAccept(request.id)}
                 onReject={() => void handleReject(request.id)}
+                             actionLoading={actionLoading}
               />
             ))
           )}
@@ -538,10 +538,12 @@ const IncomingRequestCard = ({
   request,
   onAccept,
   onReject,
+  actionLoading,
 }: {
   request: PassengerRequest;
   onAccept: () => void;
   onReject: () => void;
+  actionLoading: string | null;
 }) => (
   <Card>
     <div className="flex items-start gap-3">
@@ -570,14 +572,21 @@ const IncomingRequestCard = ({
         </div>
         <p className="mt-3 text-xs font-bold text-slate-500">Hozirgina yuborildi</p>
         <div className="mt-4 grid grid-cols-2 gap-2">
-          <Button onClick={onAccept}>
+          <Button 
+            onClick={onAccept}
+            disabled={actionLoading === request.id}
+          >
             <span className="inline-flex items-center justify-center gap-1">
-              Qabul qilish <Check size={16} />
+              {actionLoading === request.id ? '...' : 'Qabul qilish'} <Check size={16} />
             </span>
           </Button>
-          <Button variant="danger" onClick={onReject}>
+          <Button 
+            variant="danger" 
+            onClick={onReject}
+            disabled={actionLoading === request.id}
+          >
             <span className="inline-flex items-center justify-center gap-1">
-              Rad etish <X size={16} />
+              {actionLoading === request.id ? '...' : 'Rad etish'} <X size={16} />
             </span>
           </Button>
         </div>
