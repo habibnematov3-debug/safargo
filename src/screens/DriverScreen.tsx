@@ -2,9 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bell, Check, X } from 'lucide-react';
 import {
   applyToRequest,
-  getDriverProfile,
   getMatchingRequests,
-  saveDriverProfile,
   saveUser,
   selectDriver,
 } from '../lib/api';
@@ -48,19 +46,11 @@ type DbDriverUserSummary = {
   name: string | null;
 };
 
-type ProfileFormErrors = {
-  name?: string;
-  phone?: string;
-  carModel?: string;
-  carYear?: string;
-};
-
 type DriverScreenProps = {
   onGoHome: () => void;
   onGoProfile: () => void;
 };
 
-const carModels = ['Cobalt', 'Nexia 3', 'Gentra', 'Lacetti', 'Onix', 'Monza', 'Spark', 'Matiz', 'Damas', 'Boshqa'];
 const departureWindows: DriverApplication['departureWindow'][] = ['Hozir', '30 daqiqada', '1 soatda', '2 soatda'];
 
 const toNumber = (value: number | string | null | undefined): number => {
@@ -102,16 +92,9 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [profileLoading, setProfileLoading] = useState(true);
-  const [needsProfileSetup, setNeedsProfileSetup] = useState(false);
-  const [savingProfile, setSavingProfile] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [driverProfile, setDriverProfile] = useState<DriverProfileSummary | null>(null);
   const [driverName, setDriverName] = useState(identity.name);
-  const [phone, setPhone] = useState('+998 ');
-  const [profileCarModel, setProfileCarModel] = useState('');
-  const [profileCarYear, setProfileCarYear] = useState('');
-  const [carColor, setCarColor] = useState('');
-  const [profileErrors, setProfileErrors] = useState<ProfileFormErrors>({});
   const [dismissedRequestIds, setDismissedRequestIds] = useState<Set<string>>(() =>
     readDismissedRequestIds(identity.id),
   );
@@ -124,45 +107,41 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
     setError('');
 
     try {
-      const exists = await getDriverProfile(identity.id);
-
-      if (!exists) {
-        setNeedsProfileSetup(true);
-        setDriverProfile(null);
-        return;
-      }
-
       const [{ data: profile, error: profileError }, { data: user, error: userError }] = await Promise.all([
         supabase
           .from('driver_profiles')
           .select('car_model,car_year,phone,rating_avg,rating_trips')
           .eq('id', identity.id)
-          .single<DbDriverProfileSummary>(),
+          .maybeSingle<DbDriverProfileSummary>(),
         supabase.from('users').select('name').eq('id', identity.id).maybeSingle<DbDriverUserSummary>(),
       ]);
 
       if (profileError) throw profileError;
       if (userError) throw userError;
 
+      const profileName = user?.name?.trim() || identity.name;
+
+      if (!profile) {
+        setDriverProfile(null);
+        setDriverName(profileName);
+        return;
+      }
+
       const summary: DriverProfileSummary = {
-        name: user?.name?.trim() || identity.name,
-        carModel: profile.car_model ?? 'Mashina',
+        name: profileName,
+        carModel: profile.car_model?.trim() || "Noma'lum",
         carYear: profile.car_year ?? 2020,
-        phone: profile.phone ?? '',
+        phone: profile.phone?.trim() ?? '',
         ratingAvg: toNumber(profile.rating_avg),
         ratingTrips: profile.rating_trips ?? 0,
       };
 
       setDriverProfile(summary);
       setDriverName(summary.name);
-      setPhone(summary.phone || '+998 ');
-      setProfileCarModel(summary.carModel);
-      setProfileCarYear(String(summary.carYear));
-      setNeedsProfileSetup(false);
     } catch (err) {
       console.error('Haydovchi profilini yuklashda xatolik:', err);
       setError(toUzbekErrorMessage(err));
-      setNeedsProfileSetup(true);
+      setDriverProfile(null);
     } finally {
       setProfileLoading(false);
     }
@@ -247,73 +226,6 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
     (request) => request.status === 'active' && !dismissedRequestIds.has(request.id),
   );
 
-  const validateProfileForm = (): ProfileFormErrors => {
-    const errors: ProfileFormErrors = {};
-    const trimmedName = driverName.trim();
-    const trimmedPhone = phone.trim();
-    const phoneDigits = trimmedPhone.replace(/\D/g, '');
-    const year = Number(profileCarYear);
-
-    if (!trimmedName) {
-      errors.name = 'Ism familiyani kiriting';
-    }
-
-    if (!trimmedPhone.startsWith('+998') || phoneDigits.length !== 12 || !phoneDigits.startsWith('998')) {
-      errors.phone = "Telefon raqamni to'g'ri kiriting: +998 XX XXX XX XX";
-    }
-
-    if (!carModels.includes(profileCarModel)) {
-      errors.carModel = 'Mashina modelini tanlang';
-    }
-
-    if (!Number.isInteger(year) || year < 2000 || year > 2026) {
-      errors.carYear = 'Mashina yilini kiriting';
-    }
-
-    return errors;
-  };
-
-  const submitDriverProfile = async () => {
-    if (!location) {
-      setError('Joylashuv aniqlanmadi.');
-      return;
-    }
-
-    const errors = validateProfileForm();
-    setProfileErrors(errors);
-
-    if (Object.keys(errors).length > 0) {
-      return;
-    }
-
-    setSavingProfile(true);
-    setError('');
-
-    try {
-      const year = Number(profileCarYear);
-      const trimmedName = driverName.trim();
-      const trimmedPhone = phone.trim();
-      await saveUser(identity.id, trimmedName, 'driver', location.regionId, location.districtId, location.labelUz);
-      await saveDriverProfile(identity.id, profileCarModel, year, trimmedPhone, trimmedName);
-
-      setDriverProfile({
-        name: trimmedName,
-        carModel: profileCarModel,
-        carYear: year,
-        phone: trimmedPhone,
-        ratingAvg: driverProfile?.ratingAvg ?? 0,
-        ratingTrips: driverProfile?.ratingTrips ?? 0,
-      });
-      setNeedsProfileSetup(false);
-      hapticSuccess();
-    } catch (err) {
-      console.error('Haydovchi profilini saqlashda xatolik:', err);
-      setError(toUzbekErrorMessage(err, "Profilni saqlashda xatolik. Qayta urinib ko'ring."));
-    } finally {
-      setSavingProfile(false);
-    }
-  };
-
   const handleAccept = async (requestId: string) => {
     if (!location) {
       setError('Joylashuv aniqlanmadi.');
@@ -378,98 +290,50 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
     );
   }
 
-  if (needsProfileSetup) {
-    return (
-      <div className="safe-bottom flex flex-1 flex-col gap-4 px-5 py-5">
-        {driverProfile ? (
-          <Button className="w-fit px-3" onClick={() => setNeedsProfileSetup(false)} variant="secondary">
-            ← Orqaga
-          </Button>
-        ) : null}
-        <Card>
-          <h2 className="text-lg font-extrabold">Haydovchi profili</h2>
-          <p className="mt-1 text-sm font-bold text-slate-500">Safarni boshlash uchun ma'lumotlarni kiriting.</p>
-
-          <div className="mt-4 space-y-3">
-            <div>
-              <FieldLabel>Ism familiya</FieldLabel>
-              <Input value={driverName} onChange={(event) => setDriverName(event.target.value)} />
-              {profileErrors.name ? <p className="mt-1 text-xs font-bold text-red-500">{profileErrors.name}</p> : null}
-            </div>
-
-            <div>
-              <FieldLabel>Telefon raqam</FieldLabel>
-              <Input
-                inputMode="tel"
-                placeholder="+998 XX XXX XX XX"
-                value={phone}
-                onChange={(event) => setPhone(event.target.value)}
-              />
-              {profileErrors.phone ? <p className="mt-1 text-xs font-bold text-red-500">{profileErrors.phone}</p> : null}
-            </div>
-
-            <div>
-              <FieldLabel>Mashina modeli</FieldLabel>
-              <Select value={profileCarModel} onChange={(event) => setProfileCarModel(event.target.value)}>
-                <option value="">Tanlang</option>
-                {carModels.map((model) => (
-                  <option key={model} value={model}>
-                    {model}
-                  </option>
-                ))}
-              </Select>
-              {profileErrors.carModel ? <p className="mt-1 text-xs font-bold text-red-500">{profileErrors.carModel}</p> : null}
-            </div>
-
-            <div>
-              <FieldLabel>Mashina yili</FieldLabel>
-              <Input
-                inputMode="numeric"
-                max={2026}
-                min={2000}
-                placeholder="2020"
-                type="number"
-                value={profileCarYear}
-                onChange={(event) => setProfileCarYear(event.target.value)}
-              />
-              {profileErrors.carYear ? <p className="mt-1 text-xs font-bold text-red-500">{profileErrors.carYear}</p> : null}
-            </div>
-
-            <div>
-              <FieldLabel>Mashina rangi</FieldLabel>
-              <Input placeholder="Masalan: oq" value={carColor} onChange={(event) => setCarColor(event.target.value)} />
-            </div>
-
-            <Button className="w-full" onClick={() => void submitDriverProfile()} disabled={savingProfile}>
-              Profilni saqlash →
-            </Button>
-            {savingProfile ? <p className="text-xs font-bold text-slate-500">Yuklanmoqda...</p> : null}
-            {error ? <p className="text-xs font-bold text-red-500">{error}</p> : null}
-          </div>
-        </Card>
-      </div>
-    );
-  }
+  const displayName = driverProfile?.name ?? currentUser?.name ?? driverName;
+  const districtLabel = location.labelUz.split(',').at(-1)?.trim() || location.labelUz;
 
   return (
     <div className="safe-bottom flex flex-1 flex-col gap-4 px-5 py-5 pb-24">
       {toast ? <Toast message={toast} /> : null}
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-bold text-slate-500">Salom, {currentUser?.name ?? 'Haydovchi'} 🚗</p>
-          <h2 className="mt-1 text-2xl font-extrabold leading-tight">
-            {driverProfile?.carModel} · {location.labelUz}
-          </h2>
+          <p className="text-sm font-bold text-slate-500">
+            Salom, {displayName}!{driverProfile ? ' 🚗' : ''}
+          </p>
+          {driverProfile ? (
+            <h2 className="mt-1 text-2xl font-extrabold leading-tight">
+              {driverProfile.carModel} {driverProfile.carYear} · {districtLabel}
+            </h2>
+          ) : (
+            <button
+              className="mt-1 rounded-xl bg-amber-50 px-3 py-2 text-left text-sm font-extrabold text-amber-700"
+              onClick={onGoProfile}
+              type="button"
+            >
+              ⚠️ Profilingizni to'ldiring →
+            </button>
+          )}
         </div>
         <Button className="shrink-0 px-3 py-2 text-xs" onClick={() => void loadIncomingRequests()} variant="secondary">
           🔄 Yangilash
         </Button>
       </div>
 
-      {!hasPhone ? (
+      {!driverProfile ? (
+        <Card className="border border-amber-100 bg-amber-50">
+          <p className="text-sm font-extrabold text-amber-700">Profilingizni to'ldiring</p>
+          <p className="mt-1 text-xs font-bold text-slate-600">
+            Yo'lovchilar mashina modeli, yil va telefon raqamingizni ko'radi.
+          </p>
+          <Button className="mt-3 w-full" onClick={onGoProfile} variant="secondary">
+            Profilni to'ldirish →
+          </Button>
+        </Card>
+      ) : !hasPhone ? (
         <Card className="border border-red-100 bg-red-50">
           <p className="text-sm font-extrabold text-red-600">📞 Telefon qo'shilmagan</p>
-          <Button className="mt-3 w-full" onClick={() => setNeedsProfileSetup(true)} variant="secondary">
+          <Button className="mt-3 w-full" onClick={onGoProfile} variant="secondary">
             Profilni to'ldiring →
           </Button>
           <button className="mt-2 text-xs font-extrabold text-red-600 underline" onClick={onGoProfile} type="button">

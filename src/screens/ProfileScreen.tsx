@@ -6,14 +6,14 @@ import { toUzbekErrorMessage } from '../lib/errors';
 import { useSafargoStore } from '../store/useSafargoStore';
 import { getRegionLabel } from '../data/locations';
 import type { UserRole, UserLocation } from '../types/safargo';
-import { Button, Card, EmptyState, LoadingState, MissingLocationState, Pill } from '../components/ui';
+import { Button, Card, EmptyState, LoadingState, MissingLocationState, Pill, Toast } from '../components/ui';
 
 type CurrentUser = {
   id: string;
   name: string;
 };
 
-const carModels = ['Cobalt', 'Nexia 3', 'Gentra', 'Lacetti', 'Onix', 'Monza', 'Spark', 'Matiz', 'Damas', 'Boshqa'];
+const CAR_MODELS = ['Cobalt', 'Nexia 3', 'Gentra', 'Lacetti', 'Onix', 'Monza', 'Spark', 'Matiz', 'Damas', 'Boshqa'];
 
 type TelegramIdentity = {
   id: string;
@@ -197,12 +197,16 @@ const DriverProfile = ({
     carModel: string;
     carYear: number;
     phone: string;
+    ratingAvg: number;
+    ratingTrips: number;
   };
 
   type DbDriverProfileDetails = {
     car_model: string | null;
     car_year: number | null;
     phone: string | null;
+    rating_avg: number | string | null;
+    rating_trips: number | null;
   };
 
   const [stats, setStats] = useState<{
@@ -213,63 +217,106 @@ const DriverProfile = ({
     carPct: number;
     mannersPct: number;
   } | null>(null);
-  const [profileDetails, setProfileDetails] = useState<DriverProfileDetails | null>(null);
+  const [driverProfile, setDriverProfile] = useState<DriverProfileDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [error, setError] = useState('');
+  const [toast, setToast] = useState<string | undefined>();
   const [showEditSheet, setShowEditSheet] = useState(false);
-  const [editData, setEditData] = useState({ carModel: '', carYear: '', phone: '' });
+  const [editData, setEditData] = useState({ carModel: '', carYear: '2020', phone: '' });
+
+  const findCarModelOption = useCallback((value: string): string => {
+    const found = CAR_MODELS.find((model) => model.toLowerCase() === value.toLowerCase());
+    return found ?? 'Boshqa';
+  }, []);
+
+  const fetchProfile = useCallback(async (): Promise<void> => {
+    const { data, error: profileError } = await supabase
+      .from('driver_profiles')
+      .select('car_model,car_year,phone,rating_avg,rating_trips')
+      .eq('id', identity.id)
+      .maybeSingle<DbDriverProfileDetails>();
+
+    if (profileError) {
+      console.error('Profile load error:', profileError);
+      throw profileError;
+    }
+
+    if (!data) {
+      setDriverProfile(null);
+      setEditData({ carModel: '', carYear: '2020', phone: '' });
+      return;
+    }
+
+    setDriverProfile({
+      carModel: data.car_model?.trim() || "Noma'lum",
+      carYear: data.car_year ?? 2020,
+      phone: data.phone?.trim() ?? '',
+      ratingAvg: Number(data.rating_avg ?? 0),
+      ratingTrips: data.rating_trips ?? 0,
+    });
+  }, [identity.id]);
 
   const loadStats = useCallback(async () => {
     setIsLoading(true);
     setError('');
 
     try {
-      const [data, profile] = await Promise.all([
+      const [data] = await Promise.all([
         getDriverStats(identity.id),
-        supabase
-          .from('driver_profiles')
-          .select('car_model,car_year,phone')
-          .eq('id', identity.id)
-          .maybeSingle<DbDriverProfileDetails>(),
+        fetchProfile(),
       ]);
 
-      if (profile.error) {
-        throw profile.error;
-      }
-
       setStats(data);
-      setProfileDetails({
-        carModel: profile.data?.car_model ?? 'Mashina ko\'rsatilmagan',
-        carYear: profile.data?.car_year ?? 2020,
-        phone: profile.data?.phone ?? '',
-      });
     } catch (err) {
       console.error('Haydovchi statistikasini yuklashda xatolik:', err);
       setError(toUzbekErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
-  }, [identity.id]);
+  }, [fetchProfile, identity.id]);
 
   useEffect(() => {
     void loadStats();
   }, [loadStats]);
 
+  useEffect(() => {
+    if (!driverProfile) {
+      return;
+    }
+
+    setEditData({
+      carModel: findCarModelOption(driverProfile.carModel),
+      carYear: String(driverProfile.carYear),
+      phone: driverProfile.phone,
+    });
+  }, [driverProfile, findCarModelOption]);
+
+  useEffect(() => {
+    if (!toast) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => setToast(undefined), 3000);
+    return () => window.clearTimeout(timeoutId);
+  }, [toast]);
+
   const handleSaveProfile = async () => {
+    setIsSavingProfile(true);
+    setError('');
+
     try {
-      const year = Number(editData.carYear);
-      await saveDriverProfile(identity.id, editData.carModel, year, editData.phone, currentUser?.name ?? identity.name);
-      setProfileDetails({
-        carModel: editData.carModel,
-        carYear: year,
-        phone: editData.phone,
-      });
-      setShowEditSheet(false);
-      await loadStats();
+      const year = Number(editData.carYear) || 2020;
+      await saveDriverProfile(identity.id, editData.carModel, year, editData.phone.trim(), currentUser?.name ?? identity.name);
       hapticSuccess();
+      await fetchProfile();
+      setShowEditSheet(false);
+      setToast('✅ Profil saqlandi!');
     } catch (err) {
       console.error('Profilni saqlashda xatolik:', err);
       setError(toUzbekErrorMessage(err, "Profilni saqlashda xatolik. Qayta urinib ko'ring."));
+    } finally {
+      setIsSavingProfile(false);
     }
   };
 
@@ -283,6 +330,8 @@ const DriverProfile = ({
 
   const locationLabel = location.labelUz;
   const regionLabel = getRegionLabel(location.regionId);
+  const avgRating = driverProfile?.ratingAvg ?? stats?.avgRating ?? 0;
+  const totalTrips = driverProfile?.ratingTrips ?? stats?.totalTrips ?? 0;
 
   if (isLoading) {
     return <LoadingState />;
@@ -290,6 +339,7 @@ const DriverProfile = ({
 
   return (
     <div className="safe-bottom space-y-4 px-5 py-5">
+      {toast ? <Toast message={toast} /> : null}
       {/* Header */}
       <div>
         <div className="flex items-center gap-4">
@@ -304,6 +354,12 @@ const DriverProfile = ({
             <p className="mt-2 text-xs font-bold text-slate-500">
               📍 {locationLabel}, {regionLabel}
             </p>
+            {driverProfile ? (
+              <div className="mt-2 space-y-1 text-xs font-extrabold text-slate-600">
+                <p>🚗 {driverProfile.carModel} {driverProfile.carYear}</p>
+                {driverProfile.phone ? <p>📞 {driverProfile.phone}</p> : null}
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -312,19 +368,19 @@ const DriverProfile = ({
 
       {/* Rating Card */}
       <Card className="border-2 border-primary">
-        {stats && stats.avgRating > 0 ? (
+        {avgRating > 0 ? (
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-4xl font-extrabold">⭐ {stats.avgRating.toFixed(1)}</span>
+              <span className="text-4xl font-extrabold">⭐ {avgRating.toFixed(1)}</span>
               <div>
-                <p className="text-sm font-bold text-slate-600">{stats.totalTrips} ta safar</p>
+                <p className="text-sm font-bold text-slate-600">{totalTrips} ta safar</p>
                 <p className="text-xs font-bold text-slate-500">yakunlangan</p>
               </div>
             </div>
             <div className="mt-4 space-y-2">
-              <ProgressBar percentage={stats.onTimePct} label="⏱ Vaqtida" />
-              <ProgressBar percentage={stats.carPct} label="🚗 Mashina" />
-              <ProgressBar percentage={stats.mannersPct} label="😊 Muomala" />
+              <ProgressBar percentage={stats?.onTimePct ?? 0} label="⏱ Vaqtida" />
+              <ProgressBar percentage={stats?.carPct ?? 0} label="🚗 Mashina" />
+              <ProgressBar percentage={stats?.mannersPct ?? 0} label="😊 Muomala" />
             </div>
           </div>
         ) : (
@@ -336,44 +392,66 @@ const DriverProfile = ({
       </Card>
 
       {/* Car Info */}
-      <Card>
-        <div className="space-y-3">
-          <p className="text-sm font-bold text-slate-500">Mashina</p>
-          <div className="rounded-2xl bg-slate-50 p-3">
-            <p className="font-extrabold">
-              🚗 {profileDetails?.carModel ?? "Mashina ko'rsatilmagan"} {profileDetails?.carYear ?? ''}
-            </p>
-            {profileDetails?.phone ? (
-              <p className="mt-1 text-sm font-bold text-slate-500">📞 {profileDetails.phone}</p>
-            ) : (
-              <p className="mt-1 text-sm font-extrabold text-red-600">📞 Telefon qo'shilmagan</p>
-            )}
+      {driverProfile ? (
+        <Card>
+          <div className="space-y-3">
+            <p className="text-sm font-bold text-slate-500">Mashina</p>
+            <div className="rounded-2xl bg-slate-50 p-3">
+              <p className="font-extrabold">
+                🚗 {driverProfile.carModel} {driverProfile.carYear}
+              </p>
+              {driverProfile.phone ? (
+                <p className="mt-1 text-sm font-bold text-slate-500">📞 {driverProfile.phone}</p>
+              ) : (
+                <p className="mt-1 text-sm font-extrabold text-red-600">📞 Telefon qo'shilmagan</p>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Pill tone="green">✓ Tasdiqlangan</Pill>
+              <Pill tone="gray">✦ Toza</Pill>
+              <Pill tone="gray">⏱ O'z vaqtida</Pill>
+            </div>
+            <Button
+              className="w-full"
+              onClick={() => {
+                setEditData({
+                  carModel: findCarModelOption(driverProfile.carModel),
+                  carYear: String(driverProfile.carYear),
+                  phone: driverProfile.phone,
+                });
+                setShowEditSheet(true);
+              }}
+            >
+              Profilni tahrirlash →
+            </Button>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Pill tone="green">✓ Tasdiqlangan</Pill>
-            <Pill tone="gray">✦ Toza</Pill>
-            <Pill tone="gray">⏱ O'z vaqtida</Pill>
+        </Card>
+      ) : (
+        <Card className="border border-amber-100 bg-amber-50">
+          <div className="space-y-3">
+            <div>
+              <p className="text-lg font-extrabold text-slate-900">Profilingizni to'ldiring</p>
+              <p className="mt-1 text-sm font-bold text-slate-600">
+                Yo'lovchilar sizning mashinangizni ko'radi
+              </p>
+            </div>
+            <Button
+              className="w-full"
+              onClick={() => {
+                setEditData({ carModel: '', carYear: '2020', phone: '' });
+                setShowEditSheet(true);
+              }}
+            >
+              Profilni to'ldirish →
+            </Button>
           </div>
-          <Button
-            className="w-full"
-            onClick={() => {
-              setEditData({
-                carModel: profileDetails?.carModel ?? '',
-                carYear: profileDetails?.carYear ? String(profileDetails.carYear) : '',
-                phone: profileDetails?.phone ?? '',
-              });
-              setShowEditSheet(true);
-            }}
-          >
-            Profilni tahrirlash →
-          </Button>
-        </div>
-      </Card>
+        </Card>
+      )}
 
       {/* Stats Row */}
       <div className="grid grid-cols-3 gap-2">
         <Card className="text-center">
-          <p className="text-2xl font-extrabold text-primary">{stats?.totalTrips ?? 0}</p>
+          <p className="text-2xl font-extrabold text-primary">{totalTrips}</p>
           <p className="mt-1 text-xs font-bold text-slate-500">Jami safarlar</p>
         </Card>
         <Card className="text-center">
@@ -381,7 +459,7 @@ const DriverProfile = ({
           <p className="mt-1 text-xs font-bold text-slate-500">Bu oy</p>
         </Card>
         <Card className="text-center">
-          <p className="text-2xl font-extrabold text-primary">{stats?.avgRating.toFixed(1) ?? '0'}</p>
+          <p className="text-2xl font-extrabold text-primary">{avgRating.toFixed(1)}</p>
           <p className="mt-1 text-xs font-bold text-slate-500">Reyting</p>
         </Card>
       </div>
@@ -448,7 +526,7 @@ const DriverProfile = ({
                   className="mt-1 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm font-bold"
                 >
                   <option value="">Tanlang</option>
-                  {carModels.map((model) => (
+                  {CAR_MODELS.map((model) => (
                     <option key={model} value={model}>
                       {model}
                     </option>
@@ -481,7 +559,9 @@ const DriverProfile = ({
                 <Button variant="secondary" onClick={() => setShowEditSheet(false)}>
                   Bekor qilish
                 </Button>
-                <Button onClick={() => void handleSaveProfile()}>Saqlash →</Button>
+                <Button disabled={isSavingProfile} onClick={() => void handleSaveProfile()}>
+                  {isSavingProfile ? 'Saqlanmoqda...' : 'Saqlash →'}
+                </Button>
               </div>
             </div>
           </Card>
