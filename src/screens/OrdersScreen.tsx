@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { getDriverOrders, getMyRequests, type DriverOrder } from '../lib/api';
-import { getTelegramIdentity } from '../lib/telegram';
+import { getDriverOrders, getMyRequests, type DriverOrder, completeRide, submitRating } from '../lib/api';
+import { getTelegramIdentity, hapticSuccess } from '../lib/telegram';
 import { useSafargoStore } from '../store/useSafargoStore';
 import type { DriverProfile, PassengerRequest } from '../types/safargo';
 import { Button, Card, EmptyState, Pill, Spinner } from '../components/ui';
@@ -30,7 +30,11 @@ export const OrdersScreen = () => {
   const [drivers, setDrivers] = useState<DriverProfile[]>([]);
   const [driverOrders, setDriverOrders] = useState<DriverOrder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [completeConfirm, setCompleteConfirm] = useState<string | undefined>();
+  const [ratingTarget, setRatingTarget] = useState<string | undefined>();
+  const [stars, setStars] = useState(5);
 
   const loadOrders = useCallback(async () => {
     setIsLoading(true);
@@ -60,11 +64,71 @@ export const OrdersScreen = () => {
     void loadOrders();
   }, [loadOrders]);
 
+  const handleCompleteRide = async (requestId: string): Promise<void> => {
+    setIsSubmitting(true);
+    setError('');
+
+    try {
+      await completeRide(requestId);
+      await loadOrders();
+      setCompleteConfirm(undefined);
+      hapticSuccess();
+    } catch (err) {
+      console.error('completeRide error:', err);
+      setError("Xatolik. Qayta urinib ko'ring.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRateDriver = async (requestId: string, driverId: string): Promise<void> => {
+    setIsSubmitting(true);
+    setError('');
+
+    try {
+      await submitRating(
+        requestId,
+        driverId,
+        identity.id,
+        stars,
+        stars,
+        stars,
+        stars,
+      );
+      await loadOrders();
+      setRatingTarget(undefined);
+      hapticSuccess();
+    } catch (err) {
+      console.error('submitRating error:', err);
+      setError("Xatolik. Qayta urinib ko'ring.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const content =
     role === 'driver' ? (
-      <DriverOrdersList orders={driverOrders} />
+      <DriverOrdersList
+        orders={driverOrders}
+        completeConfirm={completeConfirm}
+        isSubmitting={isSubmitting}
+        onCompleteConfirm={setCompleteConfirm}
+        onCompleteRide={handleCompleteRide}
+      />
     ) : (
-      <PassengerOrdersList requests={requests} drivers={drivers} />
+      <PassengerOrdersList
+        requests={requests}
+        drivers={drivers}
+        completeConfirm={completeConfirm}
+        ratingTarget={ratingTarget}
+        stars={stars}
+        isSubmitting={isSubmitting}
+        onCompleteConfirm={setCompleteConfirm}
+        onRatingTarget={setRatingTarget}
+        onStarsChange={setStars}
+        onCompleteRide={handleCompleteRide}
+        onRateDriver={handleRateDriver}
+      />
     );
 
   return (
@@ -91,16 +155,34 @@ export const OrdersScreen = () => {
 const PassengerOrdersList = ({
   requests,
   drivers,
+  completeConfirm,
+  ratingTarget,
+  stars,
+  isSubmitting,
+  onCompleteConfirm,
+  onRatingTarget,
+  onStarsChange,
+  onCompleteRide,
+  onRateDriver,
 }: {
   requests: PassengerRequest[];
   drivers: DriverProfile[];
+  completeConfirm: string | undefined;
+  ratingTarget: string | undefined;
+  stars: number;
+  isSubmitting: boolean;
+  onCompleteConfirm: (id: string | undefined) => void;
+  onRatingTarget: (id: string | undefined) => void;
+  onStarsChange: (count: number) => void;
+  onCompleteRide: (requestId: string) => Promise<void>;
+  onRateDriver: (requestId: string, driverId: string) => Promise<void>;
 }) => {
   if (requests.length === 0) {
     return <EmptyState title="Hali safarlar yo'q" text="Safar yaratilganda shu yerda ko'rinadi." />;
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 pb-4">
       {requests.map((request) => {
         const selectedDriver = drivers.find((driver) => driver.id === request.selectedDriverId);
 
@@ -118,14 +200,90 @@ const PassengerOrdersList = ({
 
             {request.status === 'confirmed' && selectedDriver ? (
               <p className="mt-3 rounded-2xl bg-blue-50 px-3 py-2 text-sm font-extrabold text-primary">
-                Haydovchi: {selectedDriver.name}
+                🚗 {selectedDriver.name} · {selectedDriver.phone}
               </p>
             ) : null}
 
-            {request.status === 'completed' ? (
-              <Button className="mt-3 w-full" variant="secondary">
-                Baholash →
-              </Button>
+            {request.status === 'confirmed' ? (
+              <div className="mt-3 grid gap-2">
+                {completeConfirm === request.id ? (
+                  <div className="space-y-2 rounded-2xl bg-amber-50 p-3">
+                    <p className="text-sm font-extrabold text-amber-900">Safarni yakunlashga ishonchingiz komilmi?</p>
+                    <div className="flex gap-2">
+                      <Button
+                        className="flex-1"
+                        onClick={() => void onCompleteRide(request.id)}
+                        disabled={isSubmitting}
+                      >
+                        Ha, yakunla
+                      </Button>
+                      <Button
+                        className="flex-1"
+                        variant="secondary"
+                        onClick={() => onCompleteConfirm(undefined)}
+                        disabled={isSubmitting}
+                      >
+                        Bekor qil
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    className="w-full border-2 border-green-500 text-green-600"
+                    variant="secondary"
+                    onClick={() => onCompleteConfirm(request.id)}
+                  >
+                    ✓ Safar yakunlandi
+                  </Button>
+                )}
+              </div>
+            ) : null}
+
+            {request.status === 'completed' && selectedDriver ? (
+              <div>
+                {ratingTarget === request.id ? (
+                  <div className="mt-3 space-y-3 rounded-2xl bg-amber-50 p-3">
+                    <p className="text-sm font-extrabold text-amber-900">
+                      {selectedDriver.name} ni baholang (⭐ {stars})
+                    </p>
+                    <div className="flex gap-1 justify-center">
+                      {[1, 2, 3, 4, 5].map((count) => (
+                        <button
+                          key={count}
+                          className={`text-2xl transition ${
+                            count <= stars ? 'opacity-100' : 'opacity-30'
+                          }`}
+                          onClick={() => onStarsChange(count)}
+                          type="button"
+                        >
+                          ⭐
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        className="flex-1"
+                        onClick={() => void onRateDriver(request.id, selectedDriver.id)}
+                        disabled={isSubmitting}
+                      >
+                        Yuborish
+                      </Button>
+                      <Button
+                        className="flex-1"
+                        variant="secondary"
+                        onClick={() => onRatingTarget(undefined)}
+                        disabled={isSubmitting}
+                      >
+                        Bekor qil
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button className="mt-3 w-full" variant="secondary" onClick={() => onRatingTarget(request.id)}>
+                    ⭐ Baholash →
+                  </Button>
+                )}
+              </div>
             ) : null}
           </Card>
         );
@@ -134,13 +292,25 @@ const PassengerOrdersList = ({
   );
 };
 
-const DriverOrdersList = ({ orders }: { orders: DriverOrder[] }) => {
+const DriverOrdersList = ({
+  orders,
+  completeConfirm,
+  isSubmitting,
+  onCompleteConfirm,
+  onCompleteRide,
+}: {
+  orders: DriverOrder[];
+  completeConfirm: string | undefined;
+  isSubmitting: boolean;
+  onCompleteConfirm: (id: string | undefined) => void;
+  onCompleteRide: (requestId: string) => Promise<void>;
+}) => {
   if (orders.length === 0) {
     return <EmptyState title="Hali safarlar yo'q" text="Qabul qilingan so'rovlar shu yerda ko'rinadi." />;
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 pb-4">
       {orders.map(({ request, priceEarned }) => (
         <Card key={request.id}>
           <div className="flex items-start justify-between gap-2">
@@ -158,6 +328,41 @@ const DriverOrdersList = ({ orders }: { orders: DriverOrder[] }) => {
           <p className="mt-3 rounded-2xl bg-emerald-50 px-3 py-2 text-sm font-extrabold text-emerald-700">
             Daromad: {money(priceEarned)}
           </p>
+
+          {request.status === 'confirmed' ? (
+            <div className="mt-3 grid gap-2">
+              {completeConfirm === request.id ? (
+                <div className="space-y-2 rounded-2xl bg-amber-50 p-3">
+                  <p className="text-sm font-extrabold text-amber-900">Safarni yakunlashga ishonchingiz komilmi?</p>
+                  <div className="flex gap-2">
+                    <Button
+                      className="flex-1"
+                      onClick={() => void onCompleteRide(request.id)}
+                      disabled={isSubmitting}
+                    >
+                      Ha, yakunla
+                    </Button>
+                    <Button
+                      className="flex-1"
+                      variant="secondary"
+                      onClick={() => onCompleteConfirm(undefined)}
+                      disabled={isSubmitting}
+                    >
+                      Bekor qil
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  className="w-full border-2 border-green-500 text-green-600"
+                  variant="secondary"
+                  onClick={() => onCompleteConfirm(request.id)}
+                >
+                  ✓ Safar yakunlandi
+                </Button>
+              )}
+            </div>
+          ) : null}
         </Card>
       ))}
     </div>

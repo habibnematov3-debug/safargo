@@ -96,9 +96,9 @@ export default function App() {
   ) : mainTab === 'profile' ? (
     <ProfileScreen />
   ) : role === 'passenger' ? (
-    <PassengerScreen mode="home" />
+    <PassengerScreen />
   ) : (
-    <DriverScreen mode="home" />
+    <DriverScreen />
   );
 
   return (

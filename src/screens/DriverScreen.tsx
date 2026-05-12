@@ -14,11 +14,8 @@ import { getTelegramIdentity, hapticSuccess, hapticTap } from '../lib/telegram';
 import { useSafargoStore } from '../store/useSafargoStore';
 import type { DriverApplication, PassengerRequest, RegionId } from '../types/safargo';
 import { Button, Card, EmptyState, FieldLabel, Input, Pill, Select, Spinner } from '../components/ui';
+import { BottomSheet } from '../components/BottomSheet';
 import { preferenceLabel, requestRoute } from '../utils/format';
-
-type DriverScreenProps = {
-  mode?: 'home' | 'new';
-};
 
 type DriverProfileSummary = {
   name: string;
@@ -60,11 +57,13 @@ const toNumber = (value: number | string | null | undefined): number => {
   return 0;
 };
 
-export const DriverScreen = ({ mode = 'new' }: DriverScreenProps) => {
+export const DriverScreen = () => {
   const location = useSafargoStore((state) => state.location);
+  const currentUser = useSafargoStore((state) => state.currentUser);
   const identity = useMemo(() => getTelegramIdentity(), []);
   const districtId = location?.districtId;
   const [requests, setRequests] = useState<PassengerRequest[]>([]);
+  const [showRideForm, setShowRideForm] = useState(false);
   const [destinationRegionId, setDestinationRegionId] = useState<RegionId>('toshkent');
   const [departureWindow, setDepartureWindow] = useState<DriverApplication['departureWindow']>('Hozir');
   const [seatsAvailable, setSeatsAvailable] = useState(3);
@@ -72,11 +71,12 @@ export const DriverScreen = ({ mode = 'new' }: DriverScreenProps) => {
   const [frontSeatExtra, setFrontSeatExtra] = useState('20000');
   const [smoking, setSmoking] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [profileLoading, setProfileLoading] = useState(true);
   const [needsProfileSetup, setNeedsProfileSetup] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
-    const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [driverProfile, setDriverProfile] = useState<DriverProfileSummary | null>(null);
   const [driverName, setDriverName] = useState(identity.name);
   const [phone, setPhone] = useState('+998 ');
@@ -196,21 +196,28 @@ export const DriverScreen = ({ mode = 'new' }: DriverScreenProps) => {
 
   const incomingRequests = requests.filter((request) => request.status === 'active');
 
-  const submitRide = async () => {
+  const submitRide = async (): Promise<void> => {
     if (!location) {
       return;
     }
 
-    setIsLoading(true);
+    setIsSubmitting(true);
     setError('');
 
     try {
+      await saveUser(identity.id, driverName, 'driver', location.regionId, location.districtId, location.labelUz);
+      await applyToRequest(destinationRegionId, {
+        driverId: identity.id,
+        pricePerSeat: Number(pricePerSeat) || 0,
+        departureWindow,
+      });
+      setShowRideForm(false);
       hapticSuccess();
     } catch (err) {
       console.error('submitRide error:', err);
       setError("Xatolik. Qayta urinib ko'ring.");
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -409,23 +416,66 @@ export const DriverScreen = ({ mode = 'new' }: DriverScreenProps) => {
   }
 
   return (
-    <div className="safe-bottom flex flex-1 flex-col gap-4 px-5 py-5">
-      {driverProfile ? (
-        <Card>
-          <p className="text-lg font-extrabold">Salom, {driverProfile.name}! 👋</p>
-          <p className="mt-1 text-sm font-bold text-slate-600">
-            🚗 {driverProfile.carModel} {driverProfile.carYear}
-          </p>
-          <p className="mt-2 text-xs font-extrabold text-amber-500">
-            ⭐ {driverProfile.ratingAvg.toFixed(1)} · {driverProfile.ratingTrips} safar
-          </p>
-        </Card>
-      ) : null}
+    <div className="safe-bottom flex flex-1 flex-col gap-4 px-5 py-5 pb-24">
+      <div>
+        <p className="text-sm font-bold text-slate-500">Salom, {currentUser?.name ?? 'Haydovchi'} 🚗</p>
+        <h2 className="mt-1 text-2xl font-extrabold leading-tight">
+          {driverProfile?.carModel} · {location?.districtId ?? 'Tanlanmagan'}
+        </h2>
+      </div>
 
-      {mode === 'new' ? (
-        <Card>
-          <h2 className="text-lg font-extrabold">E'lon berish</h2>
-          <div className="mt-4 space-y-3">
+      <section>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-lg font-extrabold">Kelgan so'rovlar</h2>
+          {incomingRequests.length > 0 ? (
+            <Pill tone="blue">
+              {incomingRequests.length} ta yangi
+            </Pill>
+          ) : null}
+        </div>
+        <div className="space-y-3">
+          {isLoading && incomingRequests.length === 0 ? (
+            <Card>
+              <Spinner />
+              <p className="mt-2 text-center text-sm font-bold text-slate-600">Yuklanmoqda...</p>
+            </Card>
+          ) : error ? (
+            <EmptyState title="Xatolik" text={error} />
+          ) : incomingRequests.length === 0 ? (
+            <EmptyState
+              title="📭 Hozircha so'rovlar yo'q"
+              text="Sizning tumaningizdan yangi so'rovlar kelganda bu yerda ko'rinadi"
+            />
+          ) : (
+            incomingRequests.map((request) => (
+              <IncomingRequestCard
+                key={request.id}
+                request={request}
+                onAccept={() => void handleAccept(request.id)}
+                onReject={() => void handleReject(request.id)}
+                actionLoading={actionLoading}
+              />
+            ))
+          )}
+        </div>
+      </section>
+
+      {/* FAB - Floating Action Button */}
+      <button
+        className="fixed bottom-24 left-1/2 -translate-x-1/2 transform rounded-full bg-primary px-8 py-3 font-extrabold text-white shadow-lg transition active:scale-90"
+        onClick={() => setShowRideForm(true)}
+        style={{
+          boxShadow: '0 4px 20px rgba(26,79,216,0.4)',
+          zIndex: 100,
+        }}
+        type="button"
+      >
+        + Yangi e'lon
+      </button>
+
+      {/* Ride Form Bottom Sheet */}
+      <BottomSheet title="Yangi e'lon" isOpen={showRideForm} onClose={() => setShowRideForm(false)}>
+        <div className="space-y-3 pb-4">
           <div>
             <FieldLabel>Qayerdan</FieldLabel>
             <div className="rounded-2xl bg-slate-50 px-3 py-4 text-sm font-extrabold">{location?.labelUz}</div>
@@ -433,7 +483,10 @@ export const DriverScreen = ({ mode = 'new' }: DriverScreenProps) => {
 
           <div>
             <FieldLabel>Qayerga</FieldLabel>
-            <Select value={destinationRegionId} onChange={(event) => setDestinationRegionId(event.target.value as RegionId)}>
+            <Select
+              value={destinationRegionId}
+              onChange={(event) => setDestinationRegionId(event.target.value as RegionId)}
+            >
               {regions.map((region) => (
                 <option key={region.id} value={region.id}>
                   {region.labelUz}
@@ -443,10 +496,14 @@ export const DriverScreen = ({ mode = 'new' }: DriverScreenProps) => {
           </div>
 
           <div>
-            <FieldLabel>Jo'nash</FieldLabel>
+            <FieldLabel>Jo'nash vaqti</FieldLabel>
             <div className="grid grid-cols-2 gap-2">
               {(['Hozir', '30 daqiqada', '1 soatda', '2 soatda'] as const).map((item) => (
-                <Button key={item} variant={departureWindow === item ? 'primary' : 'secondary'} onClick={() => setDepartureWindow(item)}>
+                <Button
+                  key={item}
+                  variant={departureWindow === item ? 'primary' : 'secondary'}
+                  onClick={() => setDepartureWindow(item)}
+                >
                   {item}
                 </Button>
               ))}
@@ -454,7 +511,7 @@ export const DriverScreen = ({ mode = 'new' }: DriverScreenProps) => {
           </div>
 
           <div>
-            <FieldLabel>Bo'sh joy</FieldLabel>
+            <FieldLabel>Bo'sh joylar</FieldLabel>
             <div className="grid grid-cols-4 gap-2">
               {[1, 2, 3, 4].map((count) => (
                 <Button
@@ -470,12 +527,22 @@ export const DriverScreen = ({ mode = 'new' }: DriverScreenProps) => {
 
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <FieldLabel>Narx</FieldLabel>
-              <Input inputMode="numeric" value={pricePerSeat} onChange={(event) => setPricePerSeat(event.target.value)} />
+              <FieldLabel>Narx (so'm)</FieldLabel>
+              <Input
+                inputMode="numeric"
+                placeholder="120000"
+                value={pricePerSeat}
+                onChange={(event) => setPricePerSeat(event.target.value)}
+              />
             </div>
             <div>
-              <FieldLabel>Old joy +</FieldLabel>
-              <Input inputMode="numeric" value={frontSeatExtra} onChange={(event) => setFrontSeatExtra(event.target.value)} />
+              <FieldLabel>Old o'rindiq +</FieldLabel>
+              <Input
+                inputMode="numeric"
+                placeholder="20000"
+                value={frontSeatExtra}
+                onChange={(event) => setFrontSeatExtra(event.target.value)}
+              />
             </div>
           </div>
 
@@ -491,45 +558,12 @@ export const DriverScreen = ({ mode = 'new' }: DriverScreenProps) => {
             </div>
           </div>
 
-          <Button className="w-full" onClick={() => void submitRide()} disabled={isLoading}>
+          <Button className="w-full" onClick={() => void submitRide()} disabled={isSubmitting}>
             E'lon qilish →
           </Button>
-          {isLoading ? <p className="text-xs font-bold text-slate-500">Yuklanmoqda...</p> : null}
-          {error ? <p className="text-xs font-bold text-red-500">Xatolik. Qayta urinib ko'ring.</p> : null}
-          </div>
-        </Card>
-      ) : null}
-
-      {mode === 'home' ? (
-        <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-extrabold">Kelgan so'rovlar</h2>
-          <Pill tone="blue">{incomingRequests.length} ta</Pill>
+          {error ? <p className="text-xs font-bold text-red-500">{error}</p> : null}
         </div>
-        <div className="space-y-3">
-          {isLoading && incomingRequests.length === 0 ? (
-            <Card>
-              <Spinner />
-              <p className="mt-2 text-center text-sm font-bold text-slate-600">Yuklanmoqda...</p>
-            </Card>
-          ) : error ? (
-            <EmptyState title="Xatolik" text="Xatolik. Qayta urinib ko'ring." />
-          ) : incomingRequests.length === 0 ? (
-            <EmptyState title="Hozircha so'rovlar yo'q" text="Yangilanishlarni kuting..." />
-          ) : (
-            incomingRequests.map((request) => (
-              <IncomingRequestCard
-                key={request.id}
-                request={request}
-                onAccept={() => void handleAccept(request.id)}
-                onReject={() => void handleReject(request.id)}
-                             actionLoading={actionLoading}
-              />
-            ))
-          )}
-        </div>
-        </section>
-      ) : null}
+      </BottomSheet>
     </div>
   );
 };
