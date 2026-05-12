@@ -13,7 +13,18 @@ import { getTelegramIdentity, hapticSuccess, hapticTap } from '../lib/telegram';
 import { toUzbekErrorMessage } from '../lib/errors';
 import { useSafargoStore } from '../store/useSafargoStore';
 import type { DriverApplication, PassengerRequest } from '../types/safargo';
-import { Button, Card, EmptyState, FieldLabel, Input, LoadingState, MissingLocationState, Pill, Select, Toast } from '../components/ui';
+import {
+  Button,
+  Card,
+  EmptyState,
+  FieldLabel,
+  Input,
+  LoadingState,
+  MissingLocationState,
+  Pill,
+  Select,
+  Toast,
+} from '../components/ui';
 import { preferenceLabel, requestRoute } from '../utils/format';
 
 type DriverProfileSummary = {
@@ -44,7 +55,13 @@ type ProfileFormErrors = {
   carYear?: string;
 };
 
+type DriverScreenProps = {
+  onGoHome: () => void;
+  onGoProfile: () => void;
+};
+
 const carModels = ['Cobalt', 'Nexia 3', 'Gentra', 'Lacetti', 'Onix', 'Monza', 'Spark', 'Matiz', 'Damas', 'Boshqa'];
+const departureWindows: DriverApplication['departureWindow'][] = ['Hozir', '30 daqiqada', '1 soatda', '2 soatda'];
 
 const toNumber = (value: number | string | null | undefined): number => {
   if (typeof value === 'number') return value;
@@ -56,9 +73,21 @@ const toNumber = (value: number | string | null | undefined): number => {
   return 0;
 };
 
-type DriverScreenProps = {
-  onGoHome: () => void;
-  onGoProfile: () => void;
+const readDismissedRequestIds = (driverId: string): Set<string> => {
+  const raw = window.localStorage.getItem(`safargo-rejected-${driverId}`);
+
+  if (!raw) {
+    return new Set<string>();
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? new Set(parsed.filter((item): item is string => typeof item === 'string'))
+      : new Set<string>();
+  } catch {
+    return new Set<string>();
+  }
 };
 
 export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
@@ -66,6 +95,7 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
   const currentUser = useSafargoStore((state) => state.currentUser);
   const identity = useMemo(() => getTelegramIdentity(), []);
   const districtId = location?.districtId;
+
   const [requests, setRequests] = useState<PassengerRequest[]>([]);
   const [departureWindow, setDepartureWindow] = useState<DriverApplication['departureWindow']>('Hozir');
   const [pricePerSeat, setPricePerSeat] = useState('120000');
@@ -82,23 +112,12 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
   const [profileCarYear, setProfileCarYear] = useState('');
   const [carColor, setCarColor] = useState('');
   const [profileErrors, setProfileErrors] = useState<ProfileFormErrors>({});
-  const [dismissedRequestIds, setDismissedRequestIds] = useState<Set<string>>(() => {
-    const raw = window.localStorage.getItem(`safargo-rejected-${identity.id}`);
-
-    if (!raw) {
-      return new Set<string>();
-    }
-
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      return Array.isArray(parsed)
-        ? new Set(parsed.filter((item): item is string => typeof item === 'string'))
-        : new Set<string>();
-    } catch {
-      return new Set<string>();
-    }
-  });
+  const [dismissedRequestIds, setDismissedRequestIds] = useState<Set<string>>(() =>
+    readDismissedRequestIds(identity.id),
+  );
   const [toast, setToast] = useState<string | undefined>();
+
+  const hasPhone = Boolean(driverProfile?.phone.trim());
 
   const loadDriverProfile = useCallback(async () => {
     setProfileLoading(true);
@@ -122,13 +141,8 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
         supabase.from('users').select('name').eq('id', identity.id).maybeSingle<DbDriverUserSummary>(),
       ]);
 
-      if (profileError) {
-        throw profileError;
-      }
-
-      if (userError) {
-        throw userError;
-      }
+      if (profileError) throw profileError;
+      if (userError) throw userError;
 
       const summary: DriverProfileSummary = {
         name: user?.name?.trim() || identity.name,
@@ -146,26 +160,13 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
       setProfileCarYear(String(summary.carYear));
       setNeedsProfileSetup(false);
     } catch (err) {
-      console.error('driver profile load error:', err);
+      console.error('Haydovchi profilini yuklashda xatolik:', err);
       setError(toUzbekErrorMessage(err));
       setNeedsProfileSetup(true);
     } finally {
       setProfileLoading(false);
     }
   }, [identity.id, identity.name]);
-
-  useEffect(() => {
-    void loadDriverProfile();
-  }, [loadDriverProfile]);
-
-  useEffect(() => {
-    if (!toast) {
-      return undefined;
-    }
-
-    const timeoutId = window.setTimeout(() => setToast(undefined), 3000);
-    return () => window.clearTimeout(timeoutId);
-  }, [toast]);
 
   const loadIncomingRequests = useCallback(async () => {
     if (!districtId) {
@@ -181,12 +182,16 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
       const data = await getMatchingRequests(districtId, identity.id);
       setRequests(data);
     } catch (err) {
-      console.error('loadIncomingRequests error:', err);
+      console.error("So'rovlarni yuklashda xatolik:", err);
       setError(toUzbekErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
   }, [districtId, identity.id]);
+
+  useEffect(() => {
+    void loadDriverProfile();
+  }, [loadDriverProfile]);
 
   useEffect(() => {
     if (!districtId) {
@@ -229,6 +234,15 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
     };
   }, [districtId, loadIncomingRequests]);
 
+  useEffect(() => {
+    if (!toast) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => setToast(undefined), 3000);
+    return () => window.clearTimeout(timeoutId);
+  }, [toast]);
+
   const incomingRequests = requests.filter(
     (request) => request.status === 'active' && !dismissedRequestIds.has(request.id),
   );
@@ -252,7 +266,7 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
       errors.carModel = 'Mashina modelini tanlang';
     }
 
-    if (!Number.isInteger(year) || year < 2000 || year > 2025) {
+    if (!Number.isInteger(year) || year < 2000 || year > 2026) {
       errors.carYear = 'Mashina yilini kiriting';
     }
 
@@ -277,21 +291,23 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
 
     try {
       const year = Number(profileCarYear);
-      await saveUser(identity.id, driverName.trim(), 'driver', location.regionId, location.districtId, location.labelUz);
-      await saveDriverProfile(identity.id, profileCarModel, year, phone.trim(), driverName.trim());
+      const trimmedName = driverName.trim();
+      const trimmedPhone = phone.trim();
+      await saveUser(identity.id, trimmedName, 'driver', location.regionId, location.districtId, location.labelUz);
+      await saveDriverProfile(identity.id, profileCarModel, year, trimmedPhone, trimmedName);
 
       setDriverProfile({
-        name: driverName.trim(),
+        name: trimmedName,
         carModel: profileCarModel,
         carYear: year,
-        phone: phone.trim(),
-        ratingAvg: 0,
-        ratingTrips: 0,
+        phone: trimmedPhone,
+        ratingAvg: driverProfile?.ratingAvg ?? 0,
+        ratingTrips: driverProfile?.ratingTrips ?? 0,
       });
       setNeedsProfileSetup(false);
       hapticSuccess();
     } catch (err) {
-      console.error('save driver profile error:', err);
+      console.error('Haydovchi profilini saqlashda xatolik:', err);
       setError(toUzbekErrorMessage(err, "Profilni saqlashda xatolik. Qayta urinib ko'ring."));
     } finally {
       setSavingProfile(false);
@@ -299,7 +315,8 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
   };
 
   const handleAccept = async (requestId: string) => {
-    if (!districtId || !location) {
+    if (!location) {
+      setError('Joylashuv aniqlanmadi.');
       return;
     }
 
@@ -307,10 +324,11 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
     setError('');
 
     try {
-      await saveUser(identity.id, driverName.trim() || identity.name, 'driver', location.regionId, location.districtId, location.labelUz);
+      const trimmedName = driverName.trim() || identity.name;
+      await saveUser(identity.id, trimmedName, 'driver', location.regionId, location.districtId, location.labelUz);
       await applyToRequest(requestId, {
         driverId: identity.id,
-        driverName: driverName.trim() || identity.name,
+        driverName: trimmedName,
         pricePerSeat: Number(pricePerSeat) || 0,
         departureWindow,
       });
@@ -319,31 +337,29 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
       hapticSuccess();
       await loadIncomingRequests();
     } catch (err) {
-      console.error('Accept error:', err);
+      console.error('Qabul qilishda xatolik:', err);
       setError(toUzbekErrorMessage(err, 'Qabul qilishda xatolik'));
     } finally {
       setActionLoading(null);
     }
   };
 
-  const handleReject = async (requestId: string) => {
+  const handleReject = (requestId: string) => {
     const confirmed = window.confirm("Rad etishga ishonchingiz komilmi?");
 
     if (!confirmed) {
       return;
     }
 
-    setActionLoading(requestId);
-    setError('');
-
     try {
+      setActionLoading(requestId);
       const nextDismissed = new Set(dismissedRequestIds);
       nextDismissed.add(requestId);
       setDismissedRequestIds(nextDismissed);
       window.localStorage.setItem(`safargo-rejected-${identity.id}`, JSON.stringify([...nextDismissed]));
       hapticTap();
     } catch (err) {
-      console.error('Reject error:', err);
+      console.error('Rad etishda xatolik:', err);
       setError(toUzbekErrorMessage(err, 'Rad etishda xatolik'));
     } finally {
       setActionLoading(null);
@@ -365,6 +381,11 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
   if (needsProfileSetup) {
     return (
       <div className="safe-bottom flex flex-1 flex-col gap-4 px-5 py-5">
+        {driverProfile ? (
+          <Button className="w-fit px-3" onClick={() => setNeedsProfileSetup(false)} variant="secondary">
+            ← Orqaga
+          </Button>
+        ) : null}
         <Card>
           <h2 className="text-lg font-extrabold">Haydovchi profili</h2>
           <p className="mt-1 text-sm font-bold text-slate-500">Safarni boshlash uchun ma'lumotlarni kiriting.</p>
@@ -404,8 +425,8 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
               <FieldLabel>Mashina yili</FieldLabel>
               <Input
                 inputMode="numeric"
+                max={2026}
                 min={2000}
-                max={2025}
                 placeholder="2020"
                 type="number"
                 value={profileCarYear}
@@ -432,28 +453,66 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
 
   return (
     <div className="safe-bottom flex flex-1 flex-col gap-4 px-5 py-5 pb-24">
-      <div>
-        <p className="text-sm font-bold text-slate-500">Salom, {currentUser?.name ?? 'Haydovchi'} 🚗</p>
-        <h2 className="mt-1 text-2xl font-extrabold leading-tight">
-          {driverProfile?.carModel} · {location?.districtId ?? 'Tanlanmagan'}
-        </h2>
+      {toast ? <Toast message={toast} /> : null}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-bold text-slate-500">Salom, {currentUser?.name ?? 'Haydovchi'} 🚗</p>
+          <h2 className="mt-1 text-2xl font-extrabold leading-tight">
+            {driverProfile?.carModel} · {location.labelUz}
+          </h2>
+        </div>
+        <Button className="shrink-0 px-3 py-2 text-xs" onClick={() => void loadIncomingRequests()} variant="secondary">
+          🔄 Yangilash
+        </Button>
       </div>
+
+      {!hasPhone ? (
+        <Card className="border border-red-100 bg-red-50">
+          <p className="text-sm font-extrabold text-red-600">📞 Telefon qo'shilmagan</p>
+          <Button className="mt-3 w-full" onClick={() => setNeedsProfileSetup(true)} variant="secondary">
+            Profilni to'ldiring →
+          </Button>
+          <button className="mt-2 text-xs font-extrabold text-red-600 underline" onClick={onGoProfile} type="button">
+            Profil sahifasiga o'tish
+          </button>
+        </Card>
+      ) : null}
+
+      <Card>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <FieldLabel>Narx</FieldLabel>
+            <Input
+              inputMode="numeric"
+              placeholder="120000"
+              value={pricePerSeat}
+              onChange={(event) => setPricePerSeat(event.target.value)}
+            />
+          </div>
+          <div>
+            <FieldLabel>Jo'nash</FieldLabel>
+            <Select
+              value={departureWindow}
+              onChange={(event) => setDepartureWindow(event.target.value as DriverApplication['departureWindow'])}
+            >
+              {departureWindows.map((windowLabel) => (
+                <option key={windowLabel} value={windowLabel}>
+                  {windowLabel}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </div>
+      </Card>
 
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-extrabold">Kelgan so'rovlar</h2>
-          {incomingRequests.length > 0 ? (
-            <Pill tone="blue">
-              {incomingRequests.length} ta yangi
-            </Pill>
-          ) : null}
+          {incomingRequests.length > 0 ? <Pill tone="blue">{incomingRequests.length} ta yangi</Pill> : null}
         </div>
         <div className="space-y-3">
           {isLoading && incomingRequests.length === 0 ? (
-            <Card>
-              <Spinner />
-              <p className="mt-2 text-center text-sm font-bold text-slate-600">Yuklanmoqda...</p>
-            </Card>
+            <LoadingState />
           ) : error ? (
             <EmptyState title="Xatolik" text={error} />
           ) : incomingRequests.length === 0 ? (
@@ -464,182 +523,89 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
           ) : (
             incomingRequests.map((request) => (
               <IncomingRequestCard
-                key={request.id}
-                request={request}
-                onAccept={() => void handleAccept(request.id)}
-                onReject={() => void handleReject(request.id)}
                 actionLoading={actionLoading}
+                acceptDisabled={!hasPhone}
+                currentUserId={identity.id}
+                key={request.id}
+                onAccept={() => void handleAccept(request.id)}
+                onReject={() => handleReject(request.id)}
+                request={request}
               />
             ))
           )}
         </div>
       </section>
-
-      {/* FAB - Floating Action Button */}
-      <button
-        className="fixed bottom-24 left-1/2 -translate-x-1/2 transform rounded-full bg-primary px-8 py-3 font-extrabold text-white shadow-lg transition active:scale-90"
-        onClick={() => setShowRideForm(true)}
-        style={{
-          boxShadow: '0 4px 20px rgba(26,79,216,0.4)',
-          zIndex: 100,
-        }}
-        type="button"
-      >
-        + Yangi e'lon
-      </button>
-
-      {/* Ride Form Bottom Sheet */}
-      <BottomSheet title="Yangi e'lon" isOpen={showRideForm} onClose={() => setShowRideForm(false)}>
-        <div className="space-y-3 pb-4">
-          <div>
-            <FieldLabel>Qayerdan</FieldLabel>
-            <div className="rounded-2xl bg-slate-50 px-3 py-4 text-sm font-extrabold">{location?.labelUz}</div>
-          </div>
-
-          <div>
-            <FieldLabel>Qayerga</FieldLabel>
-            <Select
-              value={destinationRegionId}
-              onChange={(event) => setDestinationRegionId(event.target.value as RegionId)}
-            >
-              {regions.map((region) => (
-                <option key={region.id} value={region.id}>
-                  {region.labelUz}
-                </option>
-              ))}
-            </Select>
-          </div>
-
-          <div>
-            <FieldLabel>Jo'nash vaqti</FieldLabel>
-            <div className="grid grid-cols-2 gap-2">
-              {(['Hozir', '30 daqiqada', '1 soatda', '2 soatda'] as const).map((item) => (
-                <Button
-                  key={item}
-                  variant={departureWindow === item ? 'primary' : 'secondary'}
-                  onClick={() => setDepartureWindow(item)}
-                >
-                  {item}
-                </Button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <FieldLabel>Bo'sh joylar</FieldLabel>
-            <div className="grid grid-cols-4 gap-2">
-              {[1, 2, 3, 4].map((count) => (
-                <Button
-                  key={count}
-                  variant={seatsAvailable === count ? 'primary' : 'secondary'}
-                  onClick={() => setSeatsAvailable(count)}
-                >
-                  {count}
-                </Button>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <FieldLabel>Narx (so'm)</FieldLabel>
-              <Input
-                inputMode="numeric"
-                placeholder="120000"
-                value={pricePerSeat}
-                onChange={(event) => setPricePerSeat(event.target.value)}
-              />
-            </div>
-            <div>
-              <FieldLabel>Old o'rindiq +</FieldLabel>
-              <Input
-                inputMode="numeric"
-                placeholder="20000"
-                value={frontSeatExtra}
-                onChange={(event) => setFrontSeatExtra(event.target.value)}
-              />
-            </div>
-          </div>
-
-          <div>
-            <FieldLabel>Chekish</FieldLabel>
-            <div className="grid grid-cols-2 gap-2">
-              <Button variant={!smoking ? 'primary' : 'secondary'} onClick={() => setSmoking(false)}>
-                Chekmayman
-              </Button>
-              <Button variant={smoking ? 'primary' : 'secondary'} onClick={() => setSmoking(true)}>
-                Chekaman
-              </Button>
-            </div>
-          </div>
-
-          <Button className="w-full" onClick={() => void submitRide()} disabled={isSubmitting}>
-            E'lon qilish →
-          </Button>
-          {error ? <p className="text-xs font-bold text-red-500">{error}</p> : null}
-        </div>
-      </BottomSheet>
     </div>
   );
 };
 
 const IncomingRequestCard = ({
   request,
+  currentUserId,
   onAccept,
   onReject,
   actionLoading,
+  acceptDisabled,
 }: {
   request: PassengerRequest;
+  currentUserId: string;
   onAccept: () => void;
   onReject: () => void;
   actionLoading: string | null;
-}) => (
-  <Card>
-    <div className="flex items-start gap-3">
-      <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-blue-50 text-primary">
-        <Bell size={20} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <p className="font-extrabold">{request.passengerName}</p>
-            <p className="text-xs font-bold text-slate-500">{request.origin.labelUz}</p>
+  acceptDisabled: boolean;
+}) => {
+  const alreadyApplied = request.applicants.some((application) => application.driverId === currentUserId);
+  const isBusy = actionLoading === request.id;
+
+  return (
+    <Card>
+      <div className="flex items-start gap-3">
+        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-blue-50 text-primary">
+          <Bell size={20} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="font-extrabold">{request.passengerName}</p>
+              <p className="text-xs font-bold text-slate-500">{request.origin.labelUz}</p>
+            </div>
+            <Pill tone="green">{request.seats} ta joy so'ralgan</Pill>
           </div>
-          <Pill tone="green">{request.seats} joy</Pill>
-        </div>
-        <p className="mt-2 text-sm font-bold text-slate-700">{requestRoute(request)}</p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {request.preferences.length === 0 ? (
-            <Pill tone="gray">Tanlov yo'q</Pill>
-          ) : (
-            request.preferences.map((preference) => (
-              <Pill key={preference} tone="gray">
-                {preferenceLabel(preference)}
-              </Pill>
-            ))
-          )}
-        </div>
-        <p className="mt-3 text-xs font-bold text-slate-500">Hozirgina yuborildi</p>
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          <Button 
-            onClick={onAccept}
-            disabled={actionLoading === request.id}
-          >
-            <span className="inline-flex items-center justify-center gap-1">
-              {actionLoading === request.id ? '...' : 'Qabul qilish'} <Check size={16} />
-            </span>
-          </Button>
-          <Button 
-            variant="danger" 
-            onClick={onReject}
-            disabled={actionLoading === request.id}
-          >
-            <span className="inline-flex items-center justify-center gap-1">
-              {actionLoading === request.id ? '...' : 'Rad etish'} <X size={16} />
-            </span>
-          </Button>
+          <p className="mt-2 text-sm font-bold text-slate-700">{requestRoute(request)}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {request.preferences.length === 0 ? (
+              <Pill tone="gray">Tanlov yo'q</Pill>
+            ) : (
+              request.preferences.map((preference) => (
+                <Pill key={preference} tone="gray">
+                  {preferenceLabel(preference)}
+                </Pill>
+              ))
+            )}
+          </div>
+          <p className="mt-3 text-xs font-bold text-slate-500">Hozirgina yuborildi</p>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            {alreadyApplied ? (
+              <Button className="col-span-2 bg-slate-100 text-slate-500 shadow-none" disabled variant="secondary">
+                ✓ Ariza berildi
+              </Button>
+            ) : (
+              <>
+                <Button disabled={isBusy || acceptDisabled} onClick={onAccept}>
+                  <span className="inline-flex items-center justify-center gap-1">
+                    {isBusy ? '...' : 'Qabul qilish'} <Check size={16} />
+                  </span>
+                </Button>
+                <Button disabled={isBusy} onClick={onReject} variant="danger">
+                  <span className="inline-flex items-center justify-center gap-1">
+                    {isBusy ? '...' : 'Rad etish'} <X size={16} />
+                  </span>
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </div>
-    </div>
-  </Card>
-);
+    </Card>
+  );
+};
