@@ -153,9 +153,22 @@ export const RatingScreen = ({ onPendingCountChange }: RatingScreenProps) => {
                   <p className="mt-1 text-xs font-bold text-slate-500">{rating.completedAtISO}</p>
                 </div>
               </div>
-              <Button className="mt-4 w-full" onClick={() => openRating(rating)}>
-                Baholash →
-              </Button>
+              {rating.status === 'confirmed' ? (
+                <>
+                  <p className="mt-4 text-sm font-extrabold text-slate-700">Safar yakunlandimi?</p>
+                  <Button
+                    className="mt-2 w-full"
+                    disabled={actionLoading === rating.id}
+                    onClick={() => void completeThenOpenRating(rating)}
+                  >
+                    {actionLoading === rating.id ? 'Yuklanmoqda...' : 'Ha, yakunlandi → Baholash'}
+                  </Button>
+                </>
+              ) : (
+                <Button className="mt-4 w-full" onClick={() => openRating(rating)}>
+                  Baholash →
+                </Button>
+              )}
             </Card>
           ))}
         </div>

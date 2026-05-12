@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getDriverOrders, getMyRequests, type DriverOrder, completeRide, submitRating } from '../lib/api';
 import { getTelegramIdentity, hapticSuccess } from '../lib/telegram';
+import { toUzbekErrorMessage } from '../lib/errors';
+import { supabase } from '../lib/supabase';
 import { useSafargoStore } from '../store/useSafargoStore';
 import type { DriverProfile, PassengerRequest } from '../types/safargo';
-import { Button, Card, EmptyState, Pill, Spinner } from '../components/ui';
+import { Button, Card, EmptyState, LoadingState, Pill } from '../components/ui';
 import { getRegionLabel } from '../data/locations';
 import { money, requestRoute } from '../utils/format';
 
@@ -54,7 +56,7 @@ export const OrdersScreen = () => {
       }
     } catch (err) {
       console.error('loadOrders error:', err);
-      setError("Xatolik. Qayta urinib ko'ring.");
+      setError(toUzbekErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
@@ -63,6 +65,29 @@ export const OrdersScreen = () => {
   useEffect(() => {
     void loadOrders();
   }, [loadOrders]);
+
+  useEffect(() => {
+    const filter = role === 'driver' ? `selected_driver_id=eq.${identity.id}` : `passenger_id=eq.${identity.id}`;
+    const channel = supabase
+      .channel(`orders-${role ?? 'unknown'}-${identity.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'passenger_requests',
+          filter,
+        },
+        () => {
+          void loadOrders();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [identity.id, loadOrders, role]);
 
   const handleCompleteRide = async (requestId: string): Promise<void> => {
     setIsSubmitting(true);
@@ -75,7 +100,7 @@ export const OrdersScreen = () => {
       hapticSuccess();
     } catch (err) {
       console.error('completeRide error:', err);
-      setError("Xatolik. Qayta urinib ko'ring.");
+      setError(toUzbekErrorMessage(err));
     } finally {
       setIsSubmitting(false);
     }
@@ -100,7 +125,7 @@ export const OrdersScreen = () => {
       hapticSuccess();
     } catch (err) {
       console.error('submitRating error:', err);
-      setError("Xatolik. Qayta urinib ko'ring.");
+      setError(toUzbekErrorMessage(err));
     } finally {
       setIsSubmitting(false);
     }
@@ -139,10 +164,7 @@ export const OrdersScreen = () => {
       </div>
 
       {isLoading ? (
-        <Card>
-          <Spinner />
-          <p className="mt-2 text-center text-sm font-bold text-slate-600">Yuklanmoqda...</p>
-        </Card>
+        <LoadingState />
       ) : error ? (
         <EmptyState title="Xatolik" text={error} />
       ) : (
