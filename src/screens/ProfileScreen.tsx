@@ -308,6 +308,8 @@ const DriverProfile = ({
         </div>
       </div>
 
+      {error ? <EmptyState title="Xatolik" text={error} /> : null}
+
       {/* Rating Card */}
       <Card className="border-2 border-primary">
         {stats && stats.avgRating > 0 ? (
@@ -338,8 +340,14 @@ const DriverProfile = ({
         <div className="space-y-3">
           <p className="text-sm font-bold text-slate-500">Mashina</p>
           <div className="rounded-2xl bg-slate-50 p-3">
-            <p className="font-extrabold">🚗 Cobalt 2020</p>
-            <p className="mt-1 text-sm font-bold text-slate-500">📞 +998 90 123 45 67</p>
+            <p className="font-extrabold">
+              🚗 {profileDetails?.carModel ?? "Mashina ko'rsatilmagan"} {profileDetails?.carYear ?? ''}
+            </p>
+            {profileDetails?.phone ? (
+              <p className="mt-1 text-sm font-bold text-slate-500">📞 {profileDetails.phone}</p>
+            ) : (
+              <p className="mt-1 text-sm font-extrabold text-red-600">📞 Telefon qo'shilmagan</p>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             <Pill tone="green">✓ Tasdiqlangan</Pill>
