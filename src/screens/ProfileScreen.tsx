@@ -188,11 +188,23 @@ const DriverProfile = ({
   currentUser,
   setRole,
 }: {
-  identity: { id: string; name: string; user?: any };
-  location?: UserLocation;
+  identity: TelegramIdentity;
+  location: UserLocation;
   currentUser?: CurrentUser;
   setRole: (role: UserRole) => Promise<void>;
 }) => {
+  type DriverProfileDetails = {
+    carModel: string;
+    carYear: number;
+    phone: string;
+  };
+
+  type DbDriverProfileDetails = {
+    car_model: string | null;
+    car_year: number | null;
+    phone: string | null;
+  };
+
   const [stats, setStats] = useState<{
     totalTrips: number;
     thisMonth: number;
@@ -201,17 +213,39 @@ const DriverProfile = ({
     carPct: number;
     mannersPct: number;
   } | null>(null);
+  const [profileDetails, setProfileDetails] = useState<DriverProfileDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
   const [showEditSheet, setShowEditSheet] = useState(false);
   const [editData, setEditData] = useState({ carModel: '', carYear: '', phone: '' });
 
   const loadStats = useCallback(async () => {
     setIsLoading(true);
+    setError('');
+
     try {
-      const data = await getDriverStats(identity.id);
+      const [data, profile] = await Promise.all([
+        getDriverStats(identity.id),
+        supabase
+          .from('driver_profiles')
+          .select('car_model,car_year,phone')
+          .eq('id', identity.id)
+          .maybeSingle<DbDriverProfileDetails>(),
+      ]);
+
+      if (profile.error) {
+        throw profile.error;
+      }
+
       setStats(data);
+      setProfileDetails({
+        carModel: profile.data?.car_model ?? 'Mashina ko\'rsatilmagan',
+        carYear: profile.data?.car_year ?? 2020,
+        phone: profile.data?.phone ?? '',
+      });
     } catch (err) {
-      console.error('Failed to load driver stats:', err);
+      console.error('Haydovchi statistikasini yuklashda xatolik:', err);
+      setError(toUzbekErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
@@ -224,12 +258,18 @@ const DriverProfile = ({
   const handleSaveProfile = async () => {
     try {
       const year = Number(editData.carYear);
-      await saveDriverProfile(identity.id, editData.carModel, year, editData.phone);
+      await saveDriverProfile(identity.id, editData.carModel, year, editData.phone, currentUser?.name ?? identity.name);
+      setProfileDetails({
+        carModel: editData.carModel,
+        carYear: year,
+        phone: editData.phone,
+      });
       setShowEditSheet(false);
       await loadStats();
       hapticSuccess();
     } catch (err) {
-      console.error('Failed to save profile:', err);
+      console.error('Profilni saqlashda xatolik:', err);
+      setError(toUzbekErrorMessage(err, "Profilni saqlashda xatolik. Qayta urinib ko'ring."));
     }
   };
 
@@ -241,18 +281,11 @@ const DriverProfile = ({
     .join('')
     .toUpperCase() ?? 'SF';
 
-  const locationLabel = location ? `${location.labelUz}` : 'Tanlanmagan';
-  const regionLabel = location ? getRegionLabel(location.regionId) : '';
+  const locationLabel = location.labelUz;
+  const regionLabel = getRegionLabel(location.regionId);
 
   if (isLoading) {
-    return (
-      <div className="safe-bottom flex flex-1 items-center justify-center px-5 py-5">
-        <Card>
-          <Spinner />
-          <p className="mt-2 text-center text-sm font-bold text-slate-600">Yuklanmoqda...</p>
-        </Card>
-      </div>
-    );
+    return <LoadingState />;
   }
 
   return (
