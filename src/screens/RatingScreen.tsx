@@ -72,6 +72,24 @@ export const RatingScreen = ({ onPendingCountChange }: RatingScreenProps) => {
     setError('');
   };
 
+  const completeThenOpenRating = async (rating: PendingRating) => {
+    setActionLoading(rating.id);
+    setError('');
+
+    try {
+      await completeRide(rating.id);
+      const completedRating: PendingRating = { ...rating, status: 'completed' };
+      setPendingRatings((current) => current.map((item) => (item.id === rating.id ? completedRating : item)));
+      openRating(completedRating);
+      hapticSuccess();
+    } catch (err) {
+      console.error('completeRide error:', err);
+      setError(toUzbekErrorMessage(err));
+    } finally {
+      setActionLoading(undefined);
+    }
+  };
+
   const closeRating = () => {
     if (isSubmitting) return;
     setSelectedRating(null);
@@ -116,10 +134,7 @@ export const RatingScreen = ({ onPendingCountChange }: RatingScreenProps) => {
       </div>
 
       {isLoading ? (
-        <Card>
-          <Spinner />
-          <p className="mt-2 text-center text-sm font-bold text-slate-600">Yuklanmoqda...</p>
-        </Card>
+        <LoadingState />
       ) : error && !selectedRating ? (
         <EmptyState title="Xatolik" text={error} />
       ) : pendingRatings.length === 0 ? (
