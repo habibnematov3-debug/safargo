@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getPassengerStats, getDriverStats, updateUserRole, saveDriverProfile } from '../lib/api';
-import { getTelegramIdentity, hapticSuccess } from '../lib/telegram';
+import { supabase } from '../lib/supabase';
+import { getTelegramIdentity, hapticSuccess, type TelegramUser } from '../lib/telegram';
+import { toUzbekErrorMessage } from '../lib/errors';
 import { useSafargoStore } from '../store/useSafargoStore';
 import { getRegionLabel } from '../data/locations';
 import type { UserRole, UserLocation } from '../types/safargo';
-import { Button, Card, Pill, Spinner } from '../components/ui';
+import { Button, Card, EmptyState, LoadingState, MissingLocationState, Pill } from '../components/ui';
 
 type CurrentUser = {
   id: string;
@@ -12,6 +14,12 @@ type CurrentUser = {
 };
 
 const carModels = ['Cobalt', 'Nexia 3', 'Gentra', 'Lacetti', 'Onix', 'Monza', 'Spark', 'Matiz', 'Damas', 'Boshqa'];
+
+type TelegramIdentity = {
+  id: string;
+  name: string;
+  user?: TelegramUser;
+};
 
 const ProgressBar = ({ percentage, label }: { percentage: number; label: string }) => {
   const filled = Math.min(Math.max(percentage, 0), 100);
@@ -28,7 +36,7 @@ const ProgressBar = ({ percentage, label }: { percentage: number; label: string 
   );
 };
 
-export const ProfileScreen = () => {
+export const ProfileScreen = ({ onGoHome }: { onGoHome: () => void }) => {
   const role = useSafargoStore((state) => state.role);
   const location = useSafargoStore((state) => state.location);
   const currentUser = useSafargoStore((state) => state.currentUser);
@@ -37,6 +45,10 @@ export const ProfileScreen = () => {
 
   if (!role) {
     return null;
+  }
+
+  if (!location || !location.regionId) {
+    return <MissingLocationState onBackHome={onGoHome} />;
   }
 
   return role === 'passenger' ? (
@@ -52,19 +64,27 @@ const PassengerProfile = ({
   currentUser,
   setRole,
 }: {
-  identity: { id: string; name: string; user?: any };
-  location?: UserLocation;
+  identity: TelegramIdentity;
+  location: UserLocation;
   currentUser?: CurrentUser;
   setRole: (role: UserRole) => Promise<void>;
 }) => {
   const [stats, setStats] = useState<{ total: number; completed: number; rated: number } | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
 
   const loadStats = useCallback(async () => {
+    setIsLoading(true);
+    setError('');
+
     try {
       const data = await getPassengerStats(identity.id);
       setStats(data);
     } catch (err) {
-      console.error('Failed to load passenger stats:', err);
+      console.error("Yo'lovchi statistikasini yuklashda xatolik:", err);
+      setError(toUzbekErrorMessage(err));
+    } finally {
+      setIsLoading(false);
     }
   }, [identity.id]);
 
@@ -80,8 +100,12 @@ const PassengerProfile = ({
     .join('')
     .toUpperCase() ?? 'SF';
 
-  const locationLabel = location ? `${location.labelUz}` : 'Tanlanmagan';
-  const regionLabel = location ? getRegionLabel(location.regionId) : '';
+  const locationLabel = location.labelUz;
+  const regionLabel = getRegionLabel(location.regionId);
+
+  if (isLoading) {
+    return <LoadingState />;
+  }
 
   return (
     <div className="safe-bottom space-y-4 px-5 py-5">
@@ -102,6 +126,8 @@ const PassengerProfile = ({
           </div>
         </div>
       </div>
+
+      {error ? <EmptyState title="Xatolik" text={error} /> : null}
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-2">
