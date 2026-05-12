@@ -354,7 +354,17 @@ const DriverProfile = ({
             <Pill tone="gray">✦ Toza</Pill>
             <Pill tone="gray">⏱ O'z vaqtida</Pill>
           </div>
-          <Button className="w-full" onClick={() => setShowEditSheet(true)}>
+          <Button
+            className="w-full"
+            onClick={() => {
+              setEditData({
+                carModel: profileDetails?.carModel ?? '',
+                carYear: profileDetails?.carYear ? String(profileDetails.carYear) : '',
+                phone: profileDetails?.phone ?? '',
+              });
+              setShowEditSheet(true);
+            }}
+          >
             Profilni tahrirlash →
           </Button>
         </div>
@@ -425,6 +435,9 @@ const DriverProfile = ({
             onClick={() => setShowEditSheet(false)}
           />
           <Card className="mx-5 mb-5 rounded-3xl">
+            <Button className="mb-3 w-fit px-3" onClick={() => setShowEditSheet(false)} variant="secondary">
+              ← Orqaga
+            </Button>
             <h3 className="text-lg font-extrabold">Profilni tahrirlash</h3>
             <div className="mt-4 space-y-3">
               <div>
@@ -447,7 +460,7 @@ const DriverProfile = ({
                 <input
                   type="number"
                   min={2000}
-                  max={2025}
+                  max={2026}
                   value={editData.carYear}
                   onChange={(e) => setEditData({ ...editData, carYear: e.target.value })}
                   className="mt-1 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm font-bold"

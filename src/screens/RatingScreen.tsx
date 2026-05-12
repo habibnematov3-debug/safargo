@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { getPendingRatings, submitRating, type PendingRating } from '../lib/api';
+import { completeRide, getPendingRatings, submitRating, type PendingRating } from '../lib/api';
 import { getTelegramIdentity, hapticSuccess } from '../lib/telegram';
+import { toUzbekErrorMessage } from '../lib/errors';
 import { useSafargoStore } from '../store/useSafargoStore';
-import { Button, Card, EmptyState, Spinner } from '../components/ui';
+import { Button, Card, EmptyState, LoadingState } from '../components/ui';
 
 type RatingScreenProps = {
   onPendingCountChange?: (count: number) => void;
@@ -31,6 +32,7 @@ export const RatingScreen = ({ onPendingCountChange }: RatingScreenProps) => {
   const [comment, setComment] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | undefined>();
   const [error, setError] = useState('');
 
   const loadPendingRatings = useCallback(async () => {
@@ -50,7 +52,7 @@ export const RatingScreen = ({ onPendingCountChange }: RatingScreenProps) => {
       onPendingCountChange?.(ratings.length);
     } catch (err) {
       console.error('getPendingRatings error:', err);
-      setError("Xatolik. Qayta urinib ko'ring.");
+      setError(toUzbekErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
@@ -100,7 +102,7 @@ export const RatingScreen = ({ onPendingCountChange }: RatingScreenProps) => {
       hapticSuccess();
     } catch (err) {
       console.error('submitRating error:', err);
-      setError("Baholash yuborilmadi. Qayta urinib ko'ring.");
+      setError(toUzbekErrorMessage(err, "Baholash yuborilmadi. Qayta urinib ko'ring."));
     } finally {
       setIsSubmitting(false);
     }
