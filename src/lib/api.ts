@@ -70,7 +70,7 @@ type DbRatingRow = {
 
 type PendingRatingRequestRow = Pick<
   DbPassengerRequest,
-  'id' | 'origin_label' | 'destination_region_id' | 'date_iso' | 'selected_driver_id' | 'created_at'
+  'id' | 'origin_label' | 'destination_region_id' | 'date_iso' | 'selected_driver_id' | 'created_at' | 'status'
 >;
 
 type DbUserNameRow = {
@@ -84,6 +84,7 @@ export type PendingRating = {
   driverId: string;
   driverName: string;
   completedAtISO: string;
+  status: 'confirmed' | 'completed';
 };
 
 const toPassengerPreferences = (values: string[] | null): PassengerPreference[] =>
@@ -206,12 +207,44 @@ export const saveUser = async (
   return { id, name: userName };
 };
 
+export const ensureUser = async (userId: string, name: string): Promise<void> => {
+  const id = String(userId || 'dev-user-123');
+  const userName = name.trim() || 'Foydalanuvchi';
+
+  const { data, error } = await supabase
+    .from('users')
+    .select('id')
+    .eq('id', id)
+    .maybeSingle<{ id: string }>();
+
+  if (error) {
+    throw error;
+  }
+
+  if (data) {
+    return;
+  }
+
+  const { error: insertError } = await supabase.from('users').insert({
+    id,
+    name: userName,
+    telegram_chat_id: id,
+  });
+
+  if (insertError) {
+    throw insertError;
+  }
+};
+
 export const saveDriverProfile = async (
   userId: string,
   carModel: string,
   carYear: number,
   phone: string,
+  name = 'Haydovchi',
 ): Promise<void> => {
+  await ensureUser(userId, name);
+
   const { error } = await supabase.from('driver_profiles').upsert({
     id: userId,
     car_model: carModel,
@@ -241,6 +274,8 @@ export const createRequest = async (
   seats: number,
   preferences: string[],
 ): Promise<string> => {
+  await ensureUser(passengerId, passengerName);
+
   const payload = {
     passenger_id: passengerId,
     passenger_name: passengerName,
@@ -269,17 +304,18 @@ export const createRequest = async (
   supabase.functions.invoke('notify-drivers', {
     body: { requestId: row.id },
   }).catch((err: unknown) => {
-    console.warn('notify-drivers failed (non-fatal):', err);
+    console.warn('Notification failed (non-fatal):', err);
   });
 
   return row.id;
 };
 
-export const getMatchingRequests = async (districtId: string): Promise<PassengerRequest[]> => {
+export const getMatchingRequests = async (districtId: string, driverId: string): Promise<PassengerRequest[]> => {
   const { data, error } = await supabase
     .from('passenger_requests')
     .select('*')
     .eq('origin_district_id', districtId)
+    .neq('passenger_id', driverId)
     .eq('status', 'active')
     .order('created_at', { ascending: false })
     .returns<DbPassengerRequest[]>();
@@ -288,7 +324,37 @@ export const getMatchingRequests = async (districtId: string): Promise<Passenger
     throw error;
   }
 
-  return (data ?? []).map((row) => toPassengerRequest(row, []));
+  const requests = data ?? [];
+  const requestIds = requests.map((request) => request.id);
+
+  if (requestIds.length === 0) {
+    return [];
+  }
+
+  const { data: applicationRows, error: appsError } = await supabase
+    .from('driver_applications')
+    .select('*')
+    .in('request_id', requestIds)
+    .returns<DbDriverApplication[]>();
+
+  if (appsError) {
+    throw appsError;
+  }
+
+  const applicationsByRequest = new Map<string, DriverApplication[]>();
+  (applicationRows ?? []).forEach((application) => {
+    const bucket = applicationsByRequest.get(application.request_id) ?? [];
+    bucket.push({
+      id: application.id,
+      driverId: application.driver_id,
+      pricePerSeat: application.price_per_seat,
+      departureWindow: toDepartureWindow(application.departure_window),
+      note: application.note ?? undefined,
+    });
+    applicationsByRequest.set(application.request_id, bucket);
+  });
+
+  return requests.map((row) => toPassengerRequest(row, applicationsByRequest.get(row.id) ?? []));
 };
 
 export const applyToRequest = async (
@@ -298,8 +364,27 @@ export const applyToRequest = async (
     pricePerSeat: number;
     departureWindow: DriverApplication['departureWindow'];
     note?: string;
+    driverName?: string;
   },
 ): Promise<void> => {
+  await ensureUser(driverApplication.driverId, driverApplication.driverName ?? 'Haydovchi');
+
+  const { data: existing, error: existingError } = await supabase
+    .from('driver_applications')
+    .select('id')
+    .eq('request_id', requestId)
+    .eq('driver_id', driverApplication.driverId)
+    .limit(1)
+    .maybeSingle<{ id: string }>();
+
+  if (existingError) {
+    throw existingError;
+  }
+
+  if (existing) {
+    return;
+  }
+
   const { error } = await supabase.from('driver_applications').upsert(
     {
       request_id: requestId,
@@ -451,7 +536,7 @@ export const selectDriver = async (requestId: string, driverId: string): Promise
   supabase.functions.invoke('notify-passenger', {
     body: { requestId },
   }).catch((err: unknown) => {
-    console.warn('notify-passenger failed (non-fatal):', err);
+    console.warn('Notification failed (non-fatal):', err);
   });
 };
 
@@ -478,11 +563,12 @@ export const completeRide = async (requestId: string): Promise<void> => {
 };
 
 export const getPendingRatings = async (passengerId: string): Promise<PendingRating[]> => {
+  const confirmedCutoffISO = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
   const { data: requestRows, error: requestsError } = await supabase
     .from('passenger_requests')
-    .select('id,origin_label,destination_region_id,date_iso,selected_driver_id,created_at')
+    .select('id,origin_label,destination_region_id,date_iso,selected_driver_id,created_at,status')
     .eq('passenger_id', passengerId)
-    .eq('status', 'completed')
+    .or(`status.eq.completed,and(status.eq.confirmed,created_at.lt.${confirmedCutoffISO})`)
     .order('created_at', { ascending: false })
     .returns<PendingRatingRequestRow[]>();
 
@@ -539,6 +625,7 @@ export const getPendingRatings = async (passengerId: string): Promise<PendingRat
     driverId: request.selected_driver_id ?? '',
     driverName: driverNames.get(request.selected_driver_id ?? '') ?? 'Haydovchi',
     completedAtISO: request.date_iso,
+    status: request.status === 'confirmed' ? 'confirmed' : 'completed',
   }));
 };
 

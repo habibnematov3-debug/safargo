@@ -4,9 +4,10 @@ import { regions } from '../data/locations';
 import { createRequest, getMyRequests, saveUser, selectDriver, submitRating, completeRide as completeRideApi } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import { getTelegramIdentity, hapticSuccess } from '../lib/telegram';
+import { toUzbekErrorMessage } from '../lib/errors';
 import { regionDefaults, useSafargoStore } from '../store/useSafargoStore';
 import type { DriverProfile, PassengerPreference, PassengerRequest, RegionId } from '../types/safargo';
-import { Button, Card, EmptyState, FieldLabel, Pill, Select, Spinner } from '../components/ui';
+import { Button, Card, EmptyState, FieldLabel, LoadingState, MissingLocationState, Pill, Select, Toast } from '../components/ui';
 import { BottomSheet } from '../components/BottomSheet';
 import { preferenceLabel, requestRoute } from '../utils/format';
 
@@ -22,7 +23,7 @@ type PassengerView =
   | { name: 'applicants'; requestId: string }
   | { name: 'confirmation'; requestId: string; driverId: string };
 
-export const PassengerScreen = () => {
+export const PassengerScreen = ({ onGoHome }: { onGoHome: () => void }) => {
   const location = useSafargoStore((state) => state.location);
   const currentUser = useSafargoStore((state) => state.currentUser);
   const [requests, setRequests] = useState<PassengerRequest[]>([]);
@@ -41,6 +42,7 @@ export const PassengerScreen = () => {
   const [error, setError] = useState('');
   const [ratingTargetRequestId, setRatingTargetRequestId] = useState<string | undefined>();
   const [completeConfirm, setCompleteConfirm] = useState<string | undefined>();
+  const [toast, setToast] = useState<string | undefined>();
 
   const passengerIdentity = useMemo(() => getTelegramIdentity(), []);
 
@@ -54,7 +56,7 @@ export const PassengerScreen = () => {
       setDrivers(data.drivers);
     } catch (err) {
       console.error('loadMyRequests error:', err);
-      setError("Xatolik. Qayta urinib ko'ring.");
+      setError(toUzbekErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
@@ -63,6 +65,15 @@ export const PassengerScreen = () => {
   useEffect(() => {
     void loadMyRequests();
   }, [loadMyRequests]);
+
+  useEffect(() => {
+    if (!toast) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => setToast(undefined), 3000);
+    return () => window.clearTimeout(timeoutId);
+  }, [toast]);
 
   useEffect(() => {
     const channel = supabase
@@ -109,6 +120,7 @@ export const PassengerScreen = () => {
 
   const submitRequest = async (): Promise<void> => {
     if (!location) {
+      setError('Joylashuv aniqlanmadi.');
       return;
     }
 
@@ -146,10 +158,11 @@ export const PassengerScreen = () => {
       );
       await loadMyRequests();
       setShowRequestForm(false);
+      setToast("✅ So'rovingiz yuborildi!");
       hapticSuccess();
     } catch (err) {
       console.error('createRequest error:', err);
-      setError("Xatolik. Qayta urinib ko'ring.");
+      setError(toUzbekErrorMessage(err));
     } finally {
       setIsSubmitting(false);
     }
@@ -166,7 +179,7 @@ export const PassengerScreen = () => {
       hapticSuccess();
     } catch (err) {
       console.error('selectDriver error:', err);
-      setError("Xatolik. Qayta urinib ko'ring.");
+      setError(toUzbekErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
@@ -184,7 +197,7 @@ export const PassengerScreen = () => {
       hapticSuccess();
     } catch (err) {
       console.error('completeRide error:', err);
-      setError("Xatolik. Qayta urinib ko'ring.");
+      setError(toUzbekErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
@@ -209,7 +222,7 @@ export const PassengerScreen = () => {
       hapticSuccess();
     } catch (err) {
       console.error('submitRating error:', err);
-      setError("Xatolik. Qayta urinib ko'ring.");
+      setError(toUzbekErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
@@ -221,22 +234,24 @@ export const PassengerScreen = () => {
     );
   };
 
+  if (!location || !location.regionId) {
+    return <MissingLocationState onBackHome={onGoHome} />;
+  }
+
   // Applicants view
   if (view.name === 'applicants' && selectedRequest) {
     return (
       <div className="safe-bottom flex flex-1 flex-col gap-4 px-5 py-5">
         <Button className="w-fit px-3" variant="secondary" onClick={() => setView({ name: 'list' })}>
           <ArrowLeft size={16} />
+          Orqaga
         </Button>
         <div>
           <h2 className="text-xl font-extrabold">Haydovchilar</h2>
           <p className="text-sm font-bold text-slate-500">{requestRoute(selectedRequest)}</p>
         </div>
         {isLoading ? (
-          <Card>
-            <Spinner />
-            <p className="mt-2 text-center text-sm font-bold text-slate-600">Yuklanmoqda...</p>
-          </Card>
+          <LoadingState />
         ) : error ? (
           <EmptyState title="Xatolik" text="Xatolik. Qayta urinib ko'ring." />
         ) : selectedRequest.applicants.length === 0 ? (
@@ -266,6 +281,7 @@ export const PassengerScreen = () => {
       <div className="safe-bottom flex flex-1 flex-col gap-4 px-5 py-5">
         <Button className="w-fit px-3" variant="secondary" onClick={() => setView({ name: 'list' })}>
           <ArrowLeft size={16} />
+          Orqaga
         </Button>
         <Card>
           <div className="flex items-center gap-3">
@@ -336,16 +352,19 @@ export const PassengerScreen = () => {
   // Home screen
   return (
     <div className="safe-bottom flex flex-1 flex-col gap-4 px-5 py-5 pb-24">
-      <div>
+      {toast ? <Toast message={toast} /> : null}
+      <div className="flex items-start justify-between gap-3">
+        <div>
         <p className="text-sm font-bold text-slate-500">Salom, {currentUser?.name ?? 'Yo\'lovchi'} 👋</p>
-        <h2 className="mt-1 text-2xl font-extrabold leading-tight">{location?.labelUz ?? 'Tanlanmagan'}</h2>
+        <h2 className="mt-1 text-2xl font-extrabold leading-tight">{location.labelUz}</h2>
+        </div>
+        <Button className="shrink-0 px-3 py-2 text-xs" onClick={() => void loadMyRequests()} variant="secondary">
+          🔄 Yangilash
+        </Button>
       </div>
 
       {isLoading && activeRequests.length === 0 ? (
-        <Card>
-          <Spinner />
-          <p className="mt-2 text-center text-sm font-bold text-slate-600">Yuklanmoqda...</p>
-        </Card>
+        <LoadingState />
       ) : error ? (
         <EmptyState title="Xatolik" text={error} />
       ) : activeRequests.length === 0 ? (
@@ -550,7 +569,7 @@ const PassengerRequestCard = ({ request, onOpen }: { request: PassengerRequest; 
       <div className="mt-4 flex items-center justify-between rounded-2xl bg-blue-50 px-3 py-2">
         <span className="text-sm font-extrabold text-primary">{request.applicants.length} ta haydovchi ariza berdi</span>
         {request.applicants.length > 0 ? (
-          <span className="rounded-full bg-primary px-2 py-1 text-[10px] font-extrabold text-white">NEW</span>
+          <span className="rounded-full bg-primary px-2 py-1 text-[10px] font-extrabold text-white">YANGI</span>
         ) : null}
       </div>
     </Card>

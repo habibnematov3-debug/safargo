@@ -8,7 +8,9 @@ import { ProfileScreen } from './screens/ProfileScreen';
 import { useSafargoStore } from './store/useSafargoStore';
 import { hapticTap, initTelegram, getTelegramIdentity } from './lib/telegram';
 import { getPendingRatings, saveUser } from './lib/api';
-import { Spinner } from './components/ui';
+import { isFallbackTelegramIdentity } from './lib/guards';
+import { toUzbekErrorMessage } from './lib/errors';
+import { LoadingState } from './components/ui';
 import type { TabKey } from './types/safargo';
 
 const tabs: { id: TabKey; icon: string; label: string }[] = [
@@ -25,8 +27,10 @@ export default function App() {
   const error = useSafargoStore((state) => state.error);
   const initializeApp = useSafargoStore((state) => state.initializeApp);
   const clearRealtime = useSafargoStore((state) => state.clearRealtime);
+  const resetToEntry = useSafargoStore((state) => state.resetToEntry);
   const [mainTab, setMainTab] = useState<TabKey>('home');
   const [pendingRatingCount, setPendingRatingCount] = useState(0);
+  const needsEntryReset = isFallbackTelegramIdentity();
 
   useEffect(() => {
     initTelegram();
@@ -37,10 +41,23 @@ export default function App() {
     };
   }, [clearRealtime, initializeApp]);
 
+  useEffect(() => {
+    if (!needsEntryReset) {
+      return;
+    }
+
+    resetToEntry();
+    setMainTab('home');
+  }, [needsEntryReset, resetToEntry]);
+
   // Persist user on app mount to ensure they exist in DB before any requests
   useEffect(() => {
     const persistUser = async () => {
       try {
+        if (isFallbackTelegramIdentity()) {
+          return;
+        }
+
         const { id, name } = getTelegramIdentity();
         const stored = useSafargoStore.getState();
 
@@ -55,7 +72,7 @@ export default function App() {
           );
         }
       } catch (err) {
-        console.warn('Failed to persist user on mount:', err);
+        console.warn('Foydalanuvchini saqlashda xatolik:', err);
       }
     };
 
@@ -80,25 +97,28 @@ export default function App() {
         const pending = await getPendingRatings(identity.id);
         setPendingRatingCount(pending.length);
       } catch (err) {
-        console.warn('Failed to load pending ratings:', err);
+        console.warn(toUzbekErrorMessage(err));
       }
     };
 
     void loadPendingCount();
   }, [isMainApp, mainTab, role]);
 
-  const content = !isMainApp ? (
+  const goHome = () => setMainTab('home');
+  const goProfile = () => setMainTab('profile');
+
+  const content = !isMainApp || needsEntryReset ? (
     <EntryScreen />
   ) : mainTab === 'orders' ? (
     <OrdersScreen />
   ) : mainTab === 'rating' ? (
     <RatingScreen onPendingCountChange={setPendingRatingCount} />
   ) : mainTab === 'profile' ? (
-    <ProfileScreen />
+    <ProfileScreen onGoHome={goHome} />
   ) : role === 'passenger' ? (
-    <PassengerScreen />
+    <PassengerScreen onGoHome={goHome} />
   ) : (
-    <DriverScreen />
+    <DriverScreen onGoHome={goHome} onGoProfile={goProfile} />
   );
 
   return (
@@ -116,8 +136,7 @@ export default function App() {
       {isLoading ? (
         <div className="px-5 py-3">
           <div className="rounded-2xl bg-white p-4 shadow-soft">
-            <Spinner />
-            <p className="mt-2 text-center text-sm font-bold text-slate-600">Yuklanmoqda...</p>
+            <LoadingState />
           </div>
         </div>
       ) : null}
@@ -169,5 +188,4 @@ const BottomNav = ({
     ))}
   </nav>
 );
-
 

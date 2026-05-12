@@ -3,7 +3,8 @@ import { Car, Compass, MapPin } from 'lucide-react';
 import { buildLocation, defaultLocation, districts, getDistrictsByRegion, regions } from '../data/locations';
 import { reverseGeocode } from '../lib/geocode';
 import { saveUser } from '../lib/api';
-import { getTelegramUserName, requestTelegramLocation } from '../lib/telegram';
+import { getTelegramIdentity, getTelegramUserName, requestTelegramLocation } from '../lib/telegram';
+import { toUzbekErrorMessage } from '../lib/errors';
 import { useSafargoStore } from '../store/useSafargoStore';
 import type { DistrictId, RegionId, UserRole } from '../types/safargo';
 import { Button, Card, FieldLabel, Select, Spinner } from '../components/ui';
@@ -31,7 +32,7 @@ export const EntryScreen = () => {
       try {
         const gps = await requestTelegramLocation();
         const resolved = await reverseGeocode(gps.latitude, gps.longitude);
-        setLocation(resolved);
+        await setLocation(resolved);
         setRegionId(resolved.regionId);
         setDistrictId(resolved.districtId);
         setManual(false);
@@ -61,14 +62,15 @@ export const EntryScreen = () => {
 
     try {
       const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
-      const userId = String(tgUser?.id ?? 'dev-user-123');
-      const userName = tgUser?.first_name ?? 'Foydalanuvchi';
+      const identity = getTelegramIdentity();
+      const userId = String(tgUser?.id ?? identity.id);
+      const userName = tgUser?.first_name ?? identity.name;
 
       await saveUser(userId, userName, nextRole, nextLocation.regionId, nextLocation.districtId, nextLocation.labelUz);
       return true;
     } catch (err) {
       console.error('saveUser error:', err);
-      setError("Xatolik. Qayta urinib ko'ring.");
+      setError(toUzbekErrorMessage(err));
       return false;
     } finally {
       setSavingUser(false);
@@ -80,17 +82,28 @@ export const EntryScreen = () => {
       ? districtId
       : availableDistricts[0]?.id ?? districts[0].id;
     const nextLocation = buildLocation(regionId, nextDistrictId);
-    setLocation(nextLocation);
+    await setLocation(nextLocation);
     const saved = await persistUser(role ?? 'passenger', nextLocation);
 
     if (saved) {
-      confirmLocation();
+      await confirmLocation();
       setManual(false);
     }
   };
 
   const confirmGpsLocation = async () => {
-    confirmLocation();
+    const nextLocation = location ?? defaultLocation;
+    const saved = await persistUser(role ?? 'passenger', nextLocation);
+
+    if (!saved) {
+      return;
+    }
+
+    if (!location) {
+      await setLocation(nextLocation);
+    }
+
+    await confirmLocation();
     setManual(false);
     setManualMessage('');
   };
@@ -100,7 +113,7 @@ export const EntryScreen = () => {
     const saved = await persistUser(nextRole, nextLocation);
 
     if (saved) {
-      setRole(nextRole);
+      await setRole(nextRole);
     }
   };
 
@@ -159,7 +172,7 @@ export const EntryScreen = () => {
                     ))}
                   </Select>
                 </div>
-                <Button className="w-full" onClick={saveManualLocation}>
+                <Button className="w-full" onClick={() => void saveManualLocation()} disabled={savingUser}>
                   Tasdiqlash ✓
                 </Button>
               </div>
@@ -167,7 +180,9 @@ export const EntryScreen = () => {
               <div className="mt-3 space-y-3">
                 <p className="text-lg font-extrabold leading-snug">📍 {location?.labelUz} — to'g'rimi?</p>
                 <div className="grid grid-cols-2 gap-2">
-                  <Button onClick={confirmGpsLocation}>Ha, to'g'ri ✓</Button>
+                  <Button onClick={() => void confirmGpsLocation()} disabled={savingUser}>
+                    Ha, to'g'ri ✓
+                  </Button>
                   <Button
                     variant="secondary"
                     onClick={() => {
@@ -194,6 +209,7 @@ export const EntryScreen = () => {
                 role === 'driver' ? 'border-primary bg-blue-50' : 'border-slate-100 bg-white'
               }`}
               onClick={() => void chooseRole('driver')}
+              disabled={savingUser}
             >
               <Car className="text-primary" size={28} />
               <p className="mt-4 text-lg font-extrabold">Haydovchiman</p>
@@ -203,6 +219,7 @@ export const EntryScreen = () => {
                 role === 'passenger' ? 'border-primary bg-blue-50' : 'border-slate-100 bg-white'
               }`}
               onClick={() => void chooseRole('passenger')}
+              disabled={savingUser}
             >
               <Compass className="text-primary" size={28} />
               <p className="mt-4 text-lg font-extrabold">Yo'lovchiman</p>

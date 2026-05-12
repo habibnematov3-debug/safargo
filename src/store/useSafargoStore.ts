@@ -21,6 +21,7 @@ type SafargoState = {
   setRole: (role: UserRole) => Promise<void>;
   setLocation: (location: UserLocation) => Promise<void>;
   confirmLocation: () => Promise<void>;
+  resetToEntry: () => void;
   clearRealtime: () => void;
 };
 
@@ -72,6 +73,17 @@ export const useSafargoStore = create<SafargoState>((set, get) => ({
 
   confirmLocation: async () => {
     set({ confirmedLocation: true, error: undefined });
+  },
+
+  resetToEntry: () => {
+    set({
+      currentUser: undefined,
+      role: undefined,
+      confirmedLocation: false,
+      activeTab: 'entry',
+      isLoading: false,
+      error: undefined,
+    });
   },
 
   clearRealtime: () => {

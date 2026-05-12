@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bell, Check, X } from 'lucide-react';
-import { regions } from '../data/locations';
 import {
   applyToRequest,
   getDriverProfile,
@@ -11,10 +10,10 @@ import {
 } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import { getTelegramIdentity, hapticSuccess, hapticTap } from '../lib/telegram';
+import { toUzbekErrorMessage } from '../lib/errors';
 import { useSafargoStore } from '../store/useSafargoStore';
-import type { DriverApplication, PassengerRequest, RegionId } from '../types/safargo';
-import { Button, Card, EmptyState, FieldLabel, Input, Pill, Select, Spinner } from '../components/ui';
-import { BottomSheet } from '../components/BottomSheet';
+import type { DriverApplication, PassengerRequest } from '../types/safargo';
+import { Button, Card, EmptyState, FieldLabel, Input, LoadingState, MissingLocationState, Pill, Select, Toast } from '../components/ui';
 import { preferenceLabel, requestRoute } from '../utils/format';
 
 type DriverProfileSummary = {
@@ -57,21 +56,20 @@ const toNumber = (value: number | string | null | undefined): number => {
   return 0;
 };
 
-export const DriverScreen = () => {
+type DriverScreenProps = {
+  onGoHome: () => void;
+  onGoProfile: () => void;
+};
+
+export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
   const location = useSafargoStore((state) => state.location);
   const currentUser = useSafargoStore((state) => state.currentUser);
   const identity = useMemo(() => getTelegramIdentity(), []);
   const districtId = location?.districtId;
   const [requests, setRequests] = useState<PassengerRequest[]>([]);
-  const [showRideForm, setShowRideForm] = useState(false);
-  const [destinationRegionId, setDestinationRegionId] = useState<RegionId>('toshkent');
   const [departureWindow, setDepartureWindow] = useState<DriverApplication['departureWindow']>('Hozir');
-  const [seatsAvailable, setSeatsAvailable] = useState(3);
   const [pricePerSeat, setPricePerSeat] = useState('120000');
-  const [frontSeatExtra, setFrontSeatExtra] = useState('20000');
-  const [smoking, setSmoking] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [profileLoading, setProfileLoading] = useState(true);
   const [needsProfileSetup, setNeedsProfileSetup] = useState(false);
@@ -84,6 +82,23 @@ export const DriverScreen = () => {
   const [profileCarYear, setProfileCarYear] = useState('');
   const [carColor, setCarColor] = useState('');
   const [profileErrors, setProfileErrors] = useState<ProfileFormErrors>({});
+  const [dismissedRequestIds, setDismissedRequestIds] = useState<Set<string>>(() => {
+    const raw = window.localStorage.getItem(`safargo-rejected-${identity.id}`);
+
+    if (!raw) {
+      return new Set<string>();
+    }
+
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      return Array.isArray(parsed)
+        ? new Set(parsed.filter((item): item is string => typeof item === 'string'))
+        : new Set<string>();
+    } catch {
+      return new Set<string>();
+    }
+  });
+  const [toast, setToast] = useState<string | undefined>();
 
   const loadDriverProfile = useCallback(async () => {
     setProfileLoading(true);
@@ -132,7 +147,7 @@ export const DriverScreen = () => {
       setNeedsProfileSetup(false);
     } catch (err) {
       console.error('driver profile load error:', err);
-      setError("Xatolik. Qayta urinib ko'ring.");
+      setError(toUzbekErrorMessage(err));
       setNeedsProfileSetup(true);
     } finally {
       setProfileLoading(false);
@@ -142,6 +157,15 @@ export const DriverScreen = () => {
   useEffect(() => {
     void loadDriverProfile();
   }, [loadDriverProfile]);
+
+  useEffect(() => {
+    if (!toast) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => setToast(undefined), 3000);
+    return () => window.clearTimeout(timeoutId);
+  }, [toast]);
 
   const loadIncomingRequests = useCallback(async () => {
     if (!districtId) {
@@ -154,15 +178,15 @@ export const DriverScreen = () => {
     setError('');
 
     try {
-      const data = await getMatchingRequests(districtId);
+      const data = await getMatchingRequests(districtId, identity.id);
       setRequests(data);
     } catch (err) {
       console.error('loadIncomingRequests error:', err);
-      setError("Xatolik. Qayta urinib ko'ring.");
+      setError(toUzbekErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
-  }, [districtId]);
+  }, [districtId, identity.id]);
 
   useEffect(() => {
     if (!districtId) {
@@ -178,10 +202,21 @@ export const DriverScreen = () => {
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*',
           schema: 'public',
           table: 'passenger_requests',
           filter: `origin_district_id=eq.${districtId}`,
+        },
+        () => {
+          void loadIncomingRequests();
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'driver_applications',
         },
         () => {
           void loadIncomingRequests();
@@ -194,32 +229,9 @@ export const DriverScreen = () => {
     };
   }, [districtId, loadIncomingRequests]);
 
-  const incomingRequests = requests.filter((request) => request.status === 'active');
-
-  const submitRide = async (): Promise<void> => {
-    if (!location) {
-      return;
-    }
-
-    setIsSubmitting(true);
-    setError('');
-
-    try {
-      await saveUser(identity.id, driverName, 'driver', location.regionId, location.districtId, location.labelUz);
-      await applyToRequest(destinationRegionId, {
-        driverId: identity.id,
-        pricePerSeat: Number(pricePerSeat) || 0,
-        departureWindow,
-      });
-      setShowRideForm(false);
-      hapticSuccess();
-    } catch (err) {
-      console.error('submitRide error:', err);
-      setError("Xatolik. Qayta urinib ko'ring.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+  const incomingRequests = requests.filter(
+    (request) => request.status === 'active' && !dismissedRequestIds.has(request.id),
+  );
 
   const validateProfileForm = (): ProfileFormErrors => {
     const errors: ProfileFormErrors = {};
@@ -249,7 +261,7 @@ export const DriverScreen = () => {
 
   const submitDriverProfile = async () => {
     if (!location) {
-      setError("Joylashuv topilmadi. Qayta urinib ko'ring.");
+      setError('Joylashuv aniqlanmadi.');
       return;
     }
 
@@ -266,7 +278,7 @@ export const DriverScreen = () => {
     try {
       const year = Number(profileCarYear);
       await saveUser(identity.id, driverName.trim(), 'driver', location.regionId, location.districtId, location.labelUz);
-      await saveDriverProfile(identity.id, profileCarModel, year, phone.trim());
+      await saveDriverProfile(identity.id, profileCarModel, year, phone.trim(), driverName.trim());
 
       setDriverProfile({
         name: driverName.trim(),
@@ -280,14 +292,14 @@ export const DriverScreen = () => {
       hapticSuccess();
     } catch (err) {
       console.error('save driver profile error:', err);
-      setError("Profilni saqlashda xatolik. Qayta urinib ko'ring.");
+      setError(toUzbekErrorMessage(err, "Profilni saqlashda xatolik. Qayta urinib ko'ring."));
     } finally {
       setSavingProfile(false);
     }
   };
 
   const handleAccept = async (requestId: string) => {
-    if (!districtId) {
+    if (!districtId || !location) {
       return;
     }
 
@@ -295,54 +307,57 @@ export const DriverScreen = () => {
     setError('');
 
     try {
-      const identity = getTelegramIdentity();
-      await selectDriver(requestId, identity.id);
+      await saveUser(identity.id, driverName.trim() || identity.name, 'driver', location.regionId, location.districtId, location.labelUz);
       await applyToRequest(requestId, {
         driverId: identity.id,
+        driverName: driverName.trim() || identity.name,
         pricePerSeat: Number(pricePerSeat) || 0,
         departureWindow,
       });
+      await selectDriver(requestId, identity.id);
+      setToast("✅ Yo'lovchi qabul qilindi!");
       hapticSuccess();
       await loadIncomingRequests();
     } catch (err) {
       console.error('Accept error:', err);
-      setError('Qabul qilishda xatolik');
+      setError(toUzbekErrorMessage(err, 'Qabul qilishda xatolik'));
     } finally {
       setActionLoading(null);
     }
   };
 
   const handleReject = async (requestId: string) => {
+    const confirmed = window.confirm("Rad etishga ishonchingiz komilmi?");
+
+    if (!confirmed) {
+      return;
+    }
+
     setActionLoading(requestId);
     setError('');
 
     try {
-      const { error: rejectError } = await supabase
-        .from('passenger_requests')
-        .update({ status: 'cancelled' })
-        .eq('id', requestId);
-
-      if (rejectError) {
-        throw rejectError;
-      }
-
+      const nextDismissed = new Set(dismissedRequestIds);
+      nextDismissed.add(requestId);
+      setDismissedRequestIds(nextDismissed);
+      window.localStorage.setItem(`safargo-rejected-${identity.id}`, JSON.stringify([...nextDismissed]));
       hapticTap();
-      await loadIncomingRequests();
     } catch (err) {
       console.error('Reject error:', err);
-      setError('Rad etishda xatolik');
+      setError(toUzbekErrorMessage(err, 'Rad etishda xatolik'));
     } finally {
       setActionLoading(null);
     }
   };
 
+  if (!location || !location.regionId) {
+    return <MissingLocationState onBackHome={onGoHome} />;
+  }
+
   if (profileLoading) {
     return (
       <div className="safe-bottom flex flex-1 flex-col gap-4 px-5 py-5">
-        <Card>
-          <Spinner />
-          <p className="mt-2 text-center text-sm font-bold text-slate-600">Yuklanmoqda...</p>
-        </Card>
+        <LoadingState />
       </div>
     );
   }
