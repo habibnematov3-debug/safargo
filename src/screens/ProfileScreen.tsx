@@ -152,14 +152,14 @@ const PassengerProfile = ({
             icon="🔄"
             label="Rolni o'zgartirish"
             onTap={async () => {
-              const confirmed = window.confirm("Haydovchiga o'tmoqchimisiz?");
+              const confirmed = window.confirm("Rolni o'zgartirishga ishonchingiz komilmi?");
               if (confirmed) {
                 try {
                   await updateUserRole(identity.id, 'driver');
                   await setRole('driver');
                   hapticSuccess();
                 } catch (err) {
-                  console.error('Failed to update role:', err);
+                  console.error("Rolni o'zgartirishda xatolik:", err);
                 }
               }
             }}
@@ -349,14 +349,14 @@ const DriverProfile = ({
             icon="🔄"
             label="Rolni o'zgartirish"
             onTap={async () => {
-              const confirmed = window.confirm("Yo'lovchiga o'tmoqchimisiz?");
+              const confirmed = window.confirm("Rolni o'zgartirishga ishonchingiz komilmi?");
               if (confirmed) {
                 try {
                   await updateUserRole(identity.id, 'passenger');
                   await setRole('passenger');
                   hapticSuccess();
                 } catch (err) {
-                  console.error('Failed to update role:', err);
+                  console.error("Rolni o'zgartirishda xatolik:", err);
                 }
               }
             }}
