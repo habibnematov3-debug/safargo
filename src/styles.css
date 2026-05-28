@@ -36,3 +36,43 @@ button {
 .safe-bottom {
   padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }
+
+/* Onboarding slide animations */
+@keyframes slide-in-right {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slide-in-left {
+  from { transform: translateX(-100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes fade-in-up {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.onboarding-forward {
+  animation: slide-in-right 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.onboarding-backward {
+  animation: slide-in-left 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.onboarding-fade-up {
+  animation: fade-in-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.onboarding-fade-up-delay-1 {
+  animation: fade-in-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.1s both;
+}
+
+.onboarding-fade-up-delay-2 {
+  animation: fade-in-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.2s both;
+}
+
+.onboarding-fade-up-delay-3 {
+  animation: fade-in-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.35s both;
+}

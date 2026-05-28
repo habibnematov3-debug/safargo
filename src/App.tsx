@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { EntryScreen } from './screens/EntryScreen';
 import { DriverScreen } from './screens/DriverScreen';
 import { PassengerScreen } from './screens/PassengerScreen';
 import { OrdersScreen } from './screens/OrdersScreen';
 import { RatingScreen } from './screens/RatingScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
+import { OnboardingScreen } from './screens/OnboardingScreen';
 import { useSafargoStore } from './store/useSafargoStore';
 import { hapticTap, initTelegram, getTelegramIdentity } from './lib/telegram';
 import { getPendingRatings, saveUser } from './lib/api';
@@ -30,7 +31,14 @@ export default function App() {
   const resetToEntry = useSafargoStore((state) => state.resetToEntry);
   const [mainTab, setMainTab] = useState<TabKey>('home');
   const [pendingRatingCount, setPendingRatingCount] = useState(0);
+  const [isOnboarded, setIsOnboarded] = useState(
+    () => localStorage.getItem('safargo_onboarded') === 'true',
+  );
   const needsEntryReset = isFallbackTelegramIdentity();
+
+  const handleOnboardingComplete = useCallback(() => {
+    setIsOnboarded(true);
+  }, []);
 
   useEffect(() => {
     initTelegram();
@@ -84,6 +92,7 @@ export default function App() {
   }, [role]);
 
   const isMainApp = Boolean(confirmedLocation && role);
+  const showOnboarding = isMainApp && !isOnboarded && !needsEntryReset;
 
   useEffect(() => {
     const loadPendingCount = async () => {
@@ -106,6 +115,10 @@ export default function App() {
 
   const goHome = () => setMainTab('home');
   const goProfile = () => setMainTab('profile');
+
+  if (showOnboarding && role) {
+    return <OnboardingScreen role={role} onComplete={handleOnboardingComplete} />;
+  }
 
   const content = !isMainApp || needsEntryReset ? (
     <EntryScreen />

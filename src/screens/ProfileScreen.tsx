@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { getPassengerStats, getDriverStats, updateUserRole, saveDriverProfile } from '../lib/api';
+import { getPassengerStats, getDriverStats, updateUserRole, saveDriverProfile, updateUserOnboarding } from '../lib/api';
 import { supabase } from '../lib/supabase';
-import { getTelegramIdentity, hapticSuccess, type TelegramUser } from '../lib/telegram';
+import { getTelegramIdentity, hapticSuccess, hapticTap, type TelegramUser } from '../lib/telegram';
 import { toUzbekErrorMessage } from '../lib/errors';
 import { useSafargoStore } from '../store/useSafargoStore';
 import { getRegionLabel } from '../data/locations';
@@ -72,6 +72,31 @@ const PassengerProfile = ({
   const [stats, setStats] = useState<{ total: number; completed: number; rated: number } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [showEditSheet, setShowEditSheet] = useState(false);
+  const [editPhone, setEditPhone] = useState('');
+  const [editGender, setEditGender] = useState<'male' | 'female' | undefined>(undefined);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [toast, setToast] = useState<string | undefined>();
+
+  useEffect(() => {
+    if (!toast) return undefined;
+    const tid = window.setTimeout(() => setToast(undefined), 3000);
+    return () => window.clearTimeout(tid);
+  }, [toast]);
+
+  const handleSavePassengerEdit = useCallback(async () => {
+    setIsSavingEdit(true);
+    try {
+      await updateUserOnboarding(identity.id, editPhone.replace(/\s/g, ''), editGender);
+      hapticSuccess();
+      setShowEditSheet(false);
+      setToast('✅ Profil saqlandi!');
+    } catch (err) {
+      console.error('Profilni saqlashda xatolik:', err);
+    } finally {
+      setIsSavingEdit(false);
+    }
+  }, [editGender, editPhone, identity.id]);
 
   const loadStats = useCallback(async () => {
     setIsLoading(true);
@@ -109,6 +134,7 @@ const PassengerProfile = ({
 
   return (
     <div className="safe-bottom space-y-4 px-5 py-5">
+      {toast ? <Toast message={toast} /> : null}
       {/* Header */}
       <div>
         <div className="flex items-center gap-4">
@@ -149,6 +175,15 @@ const PassengerProfile = ({
       <Card>
         <div className="space-y-3">
           <SettingRow
+            icon="✏️"
+            label="Profilni tahrirlash"
+            onTap={() => {
+              setEditPhone('');
+              setEditGender(undefined);
+              setShowEditSheet(true);
+            }}
+          />
+          <SettingRow
             icon="🔄"
             label="Rolni o'zgartirish"
             onTap={async () => {
@@ -178,6 +213,64 @@ const PassengerProfile = ({
           />
         </div>
       </Card>
+
+      {/* Edit Profile Bottom Sheet */}
+      {showEditSheet ? (
+        <div className="fixed inset-0 z-50 flex flex-col bg-black/40">
+          <div className="flex-1" onClick={() => setShowEditSheet(false)} />
+          <Card className="mx-5 mb-5 rounded-3xl">
+            <Button className="mb-3 w-fit px-3" onClick={() => setShowEditSheet(false)} variant="secondary">
+              ← Orqaga
+            </Button>
+            <h3 className="text-lg font-extrabold">Profilni tahrirlash</h3>
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-600">Telefon raqam</label>
+                <input
+                  type="tel"
+                  value={editPhone}
+                  onChange={(e) => setEditPhone(e.target.value)}
+                  className="mt-1 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm font-bold"
+                  placeholder="+998 XX XXX XX XX"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-600">Jinsi</label>
+                <div className="mt-1 grid grid-cols-2 gap-2">
+                  {([
+                    { value: 'male' as const, icon: '👨', label: 'Erkak' },
+                    { value: 'female' as const, icon: '👩', label: 'Ayol' },
+                  ]).map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      className={`rounded-2xl border px-3 py-2 text-sm font-extrabold transition active:scale-[0.97] ${
+                        editGender === opt.value
+                          ? 'border-primary bg-blue-50 text-primary'
+                          : 'border-slate-200 bg-white text-slate-700'
+                      }`}
+                      onClick={() => {
+                        hapticTap();
+                        setEditGender(editGender === opt.value ? undefined : opt.value);
+                      }}
+                    >
+                      {opt.icon} {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="secondary" onClick={() => setShowEditSheet(false)}>
+                  Bekor qilish
+                </Button>
+                <Button disabled={isSavingEdit} onClick={() => void handleSavePassengerEdit()}>
+                  {isSavingEdit ? 'Saqlanmoqda...' : 'Saqlash →'}
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      ) : null}
     </div>
   );
 };

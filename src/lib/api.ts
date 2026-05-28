@@ -207,6 +207,21 @@ export const saveUser = async (
   return { id, name: userName };
 };
 
+export const updateUserOnboarding = async (
+  userId: string,
+  phone: string,
+  gender?: 'male' | 'female',
+): Promise<void> => {
+  const { error } = await supabase
+    .from('users')
+    .update({ phone, gender: gender ?? 'any' })
+    .eq('id', userId);
+
+  if (error) {
+    throw error;
+  }
+};
+
 export const ensureUser = async (userId: string, name: string): Promise<void> => {
   const id = String(userId || 'dev-user-123');
   const userName = name.trim() || 'Foydalanuvchi';
