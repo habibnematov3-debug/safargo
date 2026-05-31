@@ -80,22 +80,6 @@ export const Spinner = () => (
   <div className="mx-auto h-9 w-9 animate-spin rounded-full border-4 border-blue-100 border-t-primary" />
 );
 
-export const LoadingState = () => (
-  <div
-    style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      height: '200px',
-      flexDirection: 'column',
-      gap: '12px',
-    }}
-  >
-    <Spinner />
-    <p style={{ color: 'var(--ink2)', fontSize: '13px' }}>Yuklanmoqda...</p>
-  </div>
-);
-
 export const MissingLocationState = ({ onBackHome }: { onBackHome: () => void }) => (
   <div className="safe-bottom flex flex-1 flex-col gap-4 px-5 py-5">
     <EmptyState title="Joylashuv aniqlanmadi." text="Iltimos, joylashuvni qayta tanlang." />

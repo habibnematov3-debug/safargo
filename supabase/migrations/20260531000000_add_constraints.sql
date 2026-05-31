@@ -32,3 +32,9 @@ ALTER TABLE passenger_requests
     CHECK (status IN (
       'active', 'confirmed', 'cancelled', 'completed'
     ));
+
+-- Driver price must match client-side validation
+ALTER TABLE driver_applications
+  DROP CONSTRAINT IF EXISTS driver_applications_price_per_seat_check,
+  ADD CONSTRAINT driver_applications_price_per_seat_check
+    CHECK (price_per_seat BETWEEN 1000 AND 10000000);

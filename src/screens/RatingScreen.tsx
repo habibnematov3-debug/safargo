@@ -3,7 +3,8 @@ import { completeRide, getPendingRatings, submitRating, type PendingRating } fro
 import { getTelegramIdentity, hapticSuccess } from '../lib/telegram';
 import { toUzbekErrorMessage } from '../lib/errors';
 import { useSafargoStore } from '../store/useSafargoStore';
-import { Button, Card, EmptyState, LoadingState } from '../components/ui';
+import { Button, Card, EmptyState, ErrorMessage, LoadingScreen } from '../components/ui';
+import { BottomSheet } from '../components/BottomSheet';
 
 type RatingScreenProps = {
   onPendingCountChange?: (count: number) => void;
@@ -134,9 +135,9 @@ export const RatingScreen = ({ onPendingCountChange }: RatingScreenProps) => {
       </div>
 
       {isLoading ? (
-        <LoadingState />
+        <LoadingScreen message="Baholar yuklanmoqda..." />
       ) : error && !selectedRating ? (
-        <EmptyState title="Xatolik" text={error} />
+        <ErrorMessage message={error} onRetry={loadPendingRatings} />
       ) : pendingRatings.length === 0 ? (
         <EmptyState title="⭐ Baholanadigan safarlar yo'q" text="Safarlar yakunlangach bu yerda ko'rinadi" />
       ) : (
@@ -230,17 +231,10 @@ const RatingSheet = ({
   onTime: number;
   stars: number;
 }) => (
-  <div className="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/40 px-4 pb-4">
-    <div className="w-full max-w-[390px] rounded-t-[28px] bg-white p-5 shadow-2xl">
-      <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200" />
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-xl font-extrabold">Safarni baholang</h3>
-          <p className="text-sm font-bold text-slate-500">{driverName}</p>
-        </div>
-        <button className="rounded-full bg-slate-100 px-3 py-1 text-sm font-extrabold text-slate-600" onClick={onClose}>
-          Yopish
-        </button>
+  <BottomSheet isOpen onClose={onClose} title="Safarni baholang">
+    <div className="px-5 pb-4 pt-4">
+      <div>
+        <p className="text-sm font-bold text-slate-500">{driverName}</p>
       </div>
 
       <div className="mt-5">
@@ -263,13 +257,13 @@ const RatingSheet = ({
       />
       <p className="mt-1 text-right text-xs font-bold text-slate-400">{comment.length}/200</p>
 
-      {error ? <p className="mt-2 text-xs font-bold text-red-500">{error}</p> : null}
+      {error ? <ErrorMessage message={error} /> : null}
 
       <Button className="mt-4 w-full" disabled={stars === 0 || isSubmitting} onClick={onSubmit}>
         {isSubmitting ? 'Yuborilmoqda...' : 'Baholash yuborish →'}
       </Button>
     </div>
-  </div>
+  </BottomSheet>
 );
 
 const SubRating = ({

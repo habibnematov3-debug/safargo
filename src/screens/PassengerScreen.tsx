@@ -7,7 +7,18 @@ import { getTelegramIdentity, hapticSuccess } from '../lib/telegram';
 import { toUzbekErrorMessage } from '../lib/errors';
 import { regionDefaults, useSafargoStore } from '../store/useSafargoStore';
 import type { DriverProfile, PassengerPreference, PassengerRequest, RegionId } from '../types/safargo';
-import { Button, Card, EmptyState, FieldLabel, LoadingState, MissingLocationState, Pill, Select, Toast } from '../components/ui';
+import {
+  Button,
+  Card,
+  EmptyState,
+  ErrorMessage,
+  FieldLabel,
+  LoadingScreen,
+  MissingLocationState,
+  Pill,
+  Select,
+  Toast,
+} from '../components/ui';
 import { BottomSheet } from '../components/BottomSheet';
 import { preferenceLabel, requestRoute } from '../utils/format';
 
@@ -253,9 +264,9 @@ export const PassengerScreen = ({ onGoHome }: { onGoHome: () => void }) => {
           <p className="text-sm font-bold text-slate-500">{requestRoute(selectedRequest)}</p>
         </div>
         {isLoading ? (
-          <LoadingState />
+          <LoadingScreen message="Haydovchilar yuklanmoqda..." />
         ) : error ? (
-          <EmptyState title="Xatolik" text="Xatolik. Qayta urinib ko'ring." />
+          <ErrorMessage message={error} onRetry={loadMyRequests} />
         ) : selectedRequest.applicants.length === 0 ? (
           <EmptyState title="Hali ariza yo'q" text="Mos haydovchi chiqsa shu yerda ko'rinadi." />
         ) : (
@@ -366,9 +377,9 @@ export const PassengerScreen = ({ onGoHome }: { onGoHome: () => void }) => {
       </div>
 
       {isLoading && activeRequests.length === 0 ? (
-        <LoadingState />
+        <LoadingScreen message="So'rovlar yuklanmoqda..." />
       ) : error ? (
-        <EmptyState title="Xatolik" text={error} />
+        <ErrorMessage message={error} onRetry={loadMyRequests} />
       ) : activeRequests.length === 0 ? (
         <EmptyState
           title="🚗 Hali so'rovlar yo'q"
@@ -404,7 +415,7 @@ export const PassengerScreen = ({ onGoHome }: { onGoHome: () => void }) => {
 
       {/* Request Form Bottom Sheet */}
       <BottomSheet title="Yangi so'rov" isOpen={showRequestForm} onClose={() => setShowRequestForm(false)}>
-        <div className="space-y-3 pb-4">
+        <div className="space-y-3 px-5 pb-4 pt-4">
           <div>
             <FieldLabel>Qayerga</FieldLabel>
             <Select
@@ -492,7 +503,7 @@ export const PassengerScreen = ({ onGoHome }: { onGoHome: () => void }) => {
           >
             So'rov yuborish →
           </Button>
-          {error ? <p className="text-xs font-bold text-red-500">{error}</p> : null}
+          {error ? <ErrorMessage message={error} /> : null}
         </div>
       </BottomSheet>
     </div>

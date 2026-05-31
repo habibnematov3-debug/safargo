@@ -238,8 +238,8 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
     setActionLoading(requestId);
     setError('');
 
-    const priceVal = Number(pricePerSeat) || 0;
-    if (priceVal < 1000) {
+    const priceVal = Number(pricePerSeat);
+    if (!pricePerSeat || !Number.isFinite(priceVal) || priceVal < 1000) {
       setError("Narx kamida 1 000 so'm bo'lishi kerak");
       setActionLoading(null);
       return;
@@ -256,7 +256,7 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
       await applyToRequest(requestId, {
         driverId: identity.id,
         driverName: trimmedName,
-        pricePerSeat: Number(pricePerSeat) || 0,
+        pricePerSeat: priceVal,
         departureWindow,
       });
       await selectDriver(requestId, identity.id);

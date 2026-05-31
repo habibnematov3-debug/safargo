@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { getTelegramIdentity, hapticSuccess, hapticTap } from '../lib/telegram';
 import { saveDriverProfile, updateUserOnboarding } from '../lib/api';
 import { toUzbekErrorMessage } from '../lib/errors';
-import { Button, Card } from '../components/ui';
+import { Button, Card, ErrorMessage } from '../components/ui';
 import { CAR_MODELS } from '../data/locations';
 import type { UserRole } from '../types/safargo';
 
@@ -422,9 +422,7 @@ const RulesStep = ({
           <span className="text-sm font-extrabold text-slate-800">Qoidalarga roziman</span>
         </label>
 
-        {error ? (
-          <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-600">{error}</p>
-        ) : null}
+        {error ? <ErrorMessage message={error} /> : null}
       </div>
 
       <Button className="mt-6 w-full" onClick={onComplete} disabled={!agreed || isSaving}>

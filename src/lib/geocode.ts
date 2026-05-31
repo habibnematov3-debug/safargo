@@ -14,8 +14,6 @@ type NominatimResponse = {
   display_name?: string;
 };
 
-type RegionId = UserLocation['regionId'];
-
 const NOMINATIM_TIMEOUT_MS = 10000;
 
 export const reverseGeocode = async (lat: number, lon: number): Promise<UserLocation> => {

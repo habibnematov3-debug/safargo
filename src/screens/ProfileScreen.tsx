@@ -6,7 +6,8 @@ import { toUzbekErrorMessage } from '../lib/errors';
 import { useSafargoStore } from '../store/useSafargoStore';
 import { getRegionLabel, CAR_MODELS } from '../data/locations';
 import type { UserRole, UserLocation } from '../types/safargo';
-import { Button, Card, EmptyState, LoadingState, MissingLocationState, Pill, Toast } from '../components/ui';
+import { Button, Card, ErrorMessage, LoadingScreen, MissingLocationState, Pill, Toast } from '../components/ui';
+import { BottomSheet } from '../components/BottomSheet';
 
 type CurrentUser = {
   id: string;
@@ -127,7 +128,7 @@ const PassengerProfile = ({
   const regionLabel = getRegionLabel(location.regionId);
 
   if (isLoading) {
-    return <LoadingState />;
+    return <LoadingScreen message="Profil yuklanmoqda..." />;
   }
 
   return (
@@ -151,7 +152,7 @@ const PassengerProfile = ({
         </div>
       </div>
 
-      {error ? <EmptyState title="Xatolik" text={error} /> : null}
+      {error ? <ErrorMessage message={error} onRetry={loadStats} /> : null}
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-2">
@@ -212,16 +213,8 @@ const PassengerProfile = ({
         </div>
       </Card>
 
-      {/* Edit Profile Bottom Sheet */}
-      {showEditSheet ? (
-        <div className="fixed inset-0 z-50 flex flex-col bg-black/40">
-          <div className="flex-1" onClick={() => setShowEditSheet(false)} />
-          <Card className="mx-5 mb-5 rounded-3xl">
-            <Button className="mb-3 w-fit px-3" onClick={() => setShowEditSheet(false)} variant="secondary">
-              ← Orqaga
-            </Button>
-            <h3 className="text-lg font-extrabold">Profilni tahrirlash</h3>
-            <div className="mt-4 space-y-3">
+      <BottomSheet title="Profilni tahrirlash" isOpen={showEditSheet} onClose={() => setShowEditSheet(false)}>
+        <div className="space-y-3 px-5 pb-4 pt-4">
               <div>
                 <label className="block text-xs font-bold text-slate-600">Telefon raqam</label>
                 <input
@@ -265,10 +258,8 @@ const PassengerProfile = ({
                   {isSavingEdit ? 'Saqlanmoqda...' : 'Saqlash →'}
                 </Button>
               </div>
-            </div>
-          </Card>
         </div>
-      ) : null}
+      </BottomSheet>
     </div>
   );
 };
@@ -425,7 +416,7 @@ const DriverProfile = ({
   const totalTrips = driverProfile?.ratingTrips ?? stats?.totalTrips ?? 0;
 
   if (isLoading) {
-    return <LoadingState />;
+    return <LoadingScreen message="Profil yuklanmoqda..." />;
   }
 
   return (
@@ -455,7 +446,7 @@ const DriverProfile = ({
         </div>
       </div>
 
-      {error ? <EmptyState title="Xatolik" text={error} /> : null}
+      {error ? <ErrorMessage message={error} onRetry={loadStats} /> : null}
 
       {/* Rating Card */}
       <Card className="border-2 border-primary">
@@ -596,19 +587,8 @@ const DriverProfile = ({
         </div>
       </Card>
 
-      {/* Edit Profile Bottom Sheet */}
-      {showEditSheet ? (
-        <div className="fixed inset-0 z-50 flex flex-col bg-black/40">
-          <div
-            className="flex-1"
-            onClick={() => setShowEditSheet(false)}
-          />
-          <Card className="mx-5 mb-5 rounded-3xl">
-            <Button className="mb-3 w-fit px-3" onClick={() => setShowEditSheet(false)} variant="secondary">
-              ← Orqaga
-            </Button>
-            <h3 className="text-lg font-extrabold">Profilni tahrirlash</h3>
-            <div className="mt-4 space-y-3">
+      <BottomSheet title="Profilni tahrirlash" isOpen={showEditSheet} onClose={() => setShowEditSheet(false)}>
+        <div className="space-y-3 px-5 pb-4 pt-4">
               <div>
                 <label className="block text-xs font-bold text-slate-600">Mashina modeli</label>
                 <select
@@ -654,10 +634,8 @@ const DriverProfile = ({
                   {isSavingProfile ? 'Saqlanmoqda...' : 'Saqlash →'}
                 </Button>
               </div>
-            </div>
-          </Card>
         </div>
-      ) : null}
+      </BottomSheet>
     </div>
   );
 };

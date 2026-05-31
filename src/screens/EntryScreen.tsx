@@ -7,7 +7,7 @@ import { getTelegramIdentity, getTelegramUserName, requestTelegramLocation } fro
 import { toUzbekErrorMessage } from '../lib/errors';
 import { useSafargoStore } from '../store/useSafargoStore';
 import type { DistrictId, RegionId, UserRole } from '../types/safargo';
-import { Button, Card, FieldLabel, Select, Spinner } from '../components/ui';
+import { Button, Card, ErrorMessage, FieldLabel, LoadingScreen, Select } from '../components/ui';
 
 export const EntryScreen = () => {
   const location = useSafargoStore((state) => state.location);
@@ -132,10 +132,7 @@ export const EntryScreen = () => {
           <div className="min-w-0 flex-1">
             <p className="text-sm font-extrabold text-slate-900">Joylashuv</p>
             {loading ? (
-              <div className="mt-5">
-                <Spinner />
-                <p className="mt-3 text-center text-xs font-bold text-slate-500">📡 Joylashuvingiz aniqlanmoqda...</p>
-              </div>
+              <LoadingScreen message="Joylashuvingiz aniqlanmoqda..." />
             ) : confirmedLocation ? (
               <div className="mt-3 rounded-2xl bg-blue-50 px-3 py-4">
                 <p className="text-lg font-extrabold leading-snug">📍 {location?.labelUz} tanlandi</p>
@@ -143,7 +140,7 @@ export const EntryScreen = () => {
             ) : manual ? (
               <div className="mt-4 space-y-3">
                 {manualMessage ? <p className="text-xs font-bold text-slate-500">{manualMessage}</p> : null}
-                {error ? <p className="text-xs font-bold text-red-500">{error}</p> : null}
+                {error ? <ErrorMessage message={error} /> : null}
                 <div>
                   <FieldLabel>Viloyat</FieldLabel>
                   <Select

@@ -11,7 +11,7 @@ import { hapticTap, initTelegram, getTelegramIdentity } from './lib/telegram';
 import { getPendingRatings, saveUser } from './lib/api';
 import { isFallbackTelegramIdentity } from './lib/guards';
 import { toUzbekErrorMessage } from './lib/errors';
-import { LoadingState } from './components/ui';
+import { ErrorMessage, LoadingScreen } from './components/ui';
 import type { TabKey } from './types/safargo';
 
 const tabs: { id: TabKey; icon: string; label: string }[] = [
@@ -149,14 +149,14 @@ export default function App() {
       {isLoading ? (
         <div className="px-5 py-3">
           <div className="rounded-2xl bg-white p-4 shadow-soft">
-            <LoadingState />
+            <LoadingScreen />
           </div>
         </div>
       ) : null}
 
       {error ? (
         <div className="px-5 pb-1">
-          <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-600">{error}</p>
+          <ErrorMessage message={error} onRetry={() => void initializeApp()} />
         </div>
       ) : null}
 
@@ -201,4 +201,3 @@ const BottomNav = ({
     ))}
   </nav>
 );
-
