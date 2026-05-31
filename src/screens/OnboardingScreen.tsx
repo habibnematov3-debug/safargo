@@ -377,18 +377,18 @@ const RulesStep = ({
 }) => {
   const passengerRules = [
     { icon: '✅', text: 'Haydovchini tanlash huquqi sizda' },
-    { icon: '✅', text: 'Narx oldindan belgilanadi — o'zgarmaydi' },
+    { icon: '✅', text: "Narx oldindan belgilanadi — o\u2018zgarmaydi" },
     { icon: '✅', text: 'Bekor qilish kamida 1 soat oldin' },
-    { icon: '❌', text: 'Soxta so'rov yuborish taqiqlanadi' },
+    { icon: '❌', text: "Soxta so\u2018rov yuborish taqiqlanadi" },
     { icon: '❌', text: 'Haydovchiga hurmat bilan muomala qiling' },
   ];
 
   const driverRules = [
-    { icon: '✅', text: 'Tasdiqlangan yo'lovchilargina ko'rasiz' },
-    { icon: '✅', text: 'Narxni o'zingiz belgilaysiz' },
-    { icon: '❌', text: 'Qabul qilgan so'rovni bekor qilmang' },
+    { icon: '✅', text: "Tasdiqlangan yo\u2018lovchilargina ko\u2018rasiz" },
+    { icon: '✅', text: "Narxni o\u2018zingiz belgilaysiz" },
+    { icon: '❌', text: "Qabul qilgan so\u2018rovni bekor qilmang" },
     { icon: '❌', text: 'Narxni oshirish taqiqlanadi' },
-    { icon: '❌', text: 'Mashina toza bo'lishi shart' },
+    { icon: '❌', text: "Mashina toza bo\u2018lishi shart" },
   ];
 
   const rules = role === 'passenger' ? passengerRules : driverRules;
