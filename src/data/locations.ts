@@ -168,3 +168,18 @@ export const inferLocationFromAddress = (address: Record<string, unknown>): User
     source: 'gps',
   };
 };
+
+export const CAR_MODELS = [
+  'Cobalt',
+  'Nexia 3', 
+  'Gentra',
+  'Lacetti',
+  'Onix',
+  'Monza',
+  'Spark',
+  'Matiz',
+  'Damas',
+  'Boshqa',
+] as const;
+
+export type CarModel = typeof CAR_MODELS[number];

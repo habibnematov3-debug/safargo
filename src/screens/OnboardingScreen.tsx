@@ -3,6 +3,7 @@ import { getTelegramIdentity, hapticSuccess, hapticTap } from '../lib/telegram';
 import { saveDriverProfile, updateUserOnboarding } from '../lib/api';
 import { toUzbekErrorMessage } from '../lib/errors';
 import { Button, Card } from '../components/ui';
+import { CAR_MODELS } from '../data/locations';
 import type { UserRole } from '../types/safargo';
 
 type Gender = 'male' | 'female';
@@ -11,19 +12,6 @@ type OnboardingProps = {
   role: UserRole;
   onComplete: () => void;
 };
-
-const CAR_MODELS = [
-  'Cobalt',
-  'Nexia 3',
-  'Gentra',
-  'Lacetti',
-  'Onix',
-  'Monza',
-  'Spark',
-  'Matiz',
-  'Damas',
-  'Boshqa',
-];
 
 const PHONE_REGEX = /^\+998\d{9}$/;
 

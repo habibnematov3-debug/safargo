@@ -555,17 +555,6 @@ export const selectDriver = async (requestId: string, driverId: string): Promise
   });
 };
 
-export const completeRequest = async (requestId: string): Promise<void> => {
-  const { error } = await supabase
-    .from('passenger_requests')
-    .update({ status: 'completed' })
-    .eq('id', requestId);
-
-  if (error) {
-    throw error;
-  }
-};
-
 export const completeRide = async (requestId: string): Promise<void> => {
   const { error } = await supabase
     .from('passenger_requests')

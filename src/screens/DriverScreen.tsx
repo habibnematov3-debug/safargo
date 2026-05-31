@@ -15,9 +15,10 @@ import {
   Button,
   Card,
   EmptyState,
+  ErrorMessage,
   FieldLabel,
   Input,
-  LoadingState,
+  LoadingScreen,
   MissingLocationState,
   Pill,
   Select,
@@ -208,6 +209,8 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
       )
       .subscribe();
 
+    useSafargoStore.getState().addChannel(channel);
+
     return () => {
       void supabase.removeChannel(channel);
     };
@@ -234,6 +237,18 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
 
     setActionLoading(requestId);
     setError('');
+
+    const priceVal = Number(pricePerSeat) || 0;
+    if (priceVal < 1000) {
+      setError("Narx kamida 1 000 so'm bo'lishi kerak");
+      setActionLoading(null);
+      return;
+    }
+    if (priceVal > 10000000) {
+      setError("Narx juda katta kiritildi");
+      setActionLoading(null);
+      return;
+    }
 
     try {
       const trimmedName = driverName.trim() || identity.name;
@@ -285,7 +300,7 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
   if (profileLoading) {
     return (
       <div className="safe-bottom flex flex-1 flex-col gap-4 px-5 py-5">
-        <LoadingState />
+        <LoadingScreen message="Haydovchi profili yuklanmoqda..." />
       </div>
     );
   }
@@ -347,6 +362,10 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
           <div>
             <FieldLabel>Narx</FieldLabel>
             <Input
+              type="number"
+              min="1000"
+              max="10000000"
+              step="1000"
               inputMode="numeric"
               placeholder="120000"
               value={pricePerSeat}
@@ -376,9 +395,9 @@ export const DriverScreen = ({ onGoHome, onGoProfile }: DriverScreenProps) => {
         </div>
         <div className="space-y-3">
           {isLoading && incomingRequests.length === 0 ? (
-            <LoadingState />
+            <LoadingScreen message="So'rovlar yuklanmoqda..." />
           ) : error ? (
-            <EmptyState title="Xatolik" text={error} />
+            <ErrorMessage message={error} onRetry={loadIncomingRequests} />
           ) : incomingRequests.length === 0 ? (
             <EmptyState
               title="📭 Hozircha so'rovlar yo'q"

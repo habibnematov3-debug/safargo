@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { defaultLocation } from '../data/locations';
 import { saveUser } from '../lib/api';
 import { getTelegramIdentity } from '../lib/telegram';
+import { supabase } from '../lib/supabase';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import type { PassengerPreference, RegionId, UserLocation, UserRole } from '../types/safargo';
 
 type CurrentUser = {
@@ -17,11 +19,13 @@ type SafargoState = {
   activeTab: 'entry' | 'driver' | 'passenger';
   isLoading: boolean;
   error?: string;
+  channels: RealtimeChannel[];
   initializeApp: () => Promise<void>;
   setRole: (role: UserRole) => Promise<void>;
   setLocation: (location: UserLocation) => Promise<void>;
   confirmLocation: () => Promise<void>;
   resetToEntry: () => void;
+  addChannel: (channel: RealtimeChannel) => void;
   clearRealtime: () => void;
 };
 
@@ -37,6 +41,7 @@ export const useSafargoStore = create<SafargoState>((set, get) => ({
   activeTab: 'entry',
   isLoading: false,
   error: undefined,
+  channels: [],
 
   initializeApp: async () => {
     set({ isLoading: true, error: undefined });
@@ -86,8 +91,18 @@ export const useSafargoStore = create<SafargoState>((set, get) => ({
     });
   },
 
+  addChannel: (channel) => {
+    set((state) => ({
+      channels: [...state.channels, channel],
+    }));
+  },
+
   clearRealtime: () => {
-    void 0;
+    const { channels } = get();
+    channels.forEach((channel) => {
+      void supabase.removeChannel(channel);
+    });
+    set({ channels: [] });
   },
 }));
 

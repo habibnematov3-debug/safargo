@@ -110,3 +110,72 @@ export const Toast = ({ message }: { message: string }) => (
     {message}
   </div>
 );
+
+export const LoadingScreen = ({ 
+  message = 'Yuklanmoqda...' 
+}: { 
+  message?: string 
+}) => (
+  <div style={{
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: '200px',
+    gap: '12px',
+    padding: '40px 20px',
+  }}>
+    <Spinner />
+    <p style={{ 
+      color: 'var(--ink2)', 
+      fontSize: '13px',
+      fontWeight: '600',
+      textAlign: 'center',
+    }}>
+      {message}
+    </p>
+  </div>
+);
+
+export const ErrorMessage = ({ 
+  message,
+  onRetry,
+}: { 
+  message: string
+  onRetry?: () => void 
+}) => (
+  <div style={{
+    background: '#FEF2F2',
+    border: '0.5px solid #FECACA',
+    borderRadius: '12px',
+    padding: '14px 16px',
+    margin: '0 16px',
+    textAlign: 'center',
+  }}>
+    <p style={{ 
+      color: '#DC2626', 
+      fontSize: '13px',
+      fontWeight: '600',
+      marginBottom: onRetry ? '10px' : '0',
+    }}>
+      {message}
+    </p>
+    {onRetry && (
+      <button
+        onClick={onRetry}
+        style={{
+          background: '#DC2626',
+          color: '#fff',
+          border: 'none',
+          borderRadius: '8px',
+          padding: '8px 16px',
+          fontSize: '12px',
+          fontWeight: '700',
+          cursor: 'pointer',
+        }}
+      >
+        Qayta urinib ko'ring
+      </button>
+    )}
+  </div>
+);

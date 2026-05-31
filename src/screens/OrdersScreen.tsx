@@ -5,7 +5,7 @@ import { toUzbekErrorMessage } from '../lib/errors';
 import { supabase } from '../lib/supabase';
 import { useSafargoStore } from '../store/useSafargoStore';
 import type { DriverProfile, PassengerRequest } from '../types/safargo';
-import { Button, Card, EmptyState, LoadingState, Pill } from '../components/ui';
+import { Button, Card, EmptyState, LoadingScreen, ErrorMessage, Pill } from '../components/ui';
 import { getRegionLabel } from '../data/locations';
 import { money, requestRoute } from '../utils/format';
 
@@ -83,6 +83,8 @@ export const OrdersScreen = () => {
         },
       )
       .subscribe();
+
+    useSafargoStore.getState().addChannel(channel);
 
     return () => {
       void supabase.removeChannel(channel);
@@ -164,9 +166,9 @@ export const OrdersScreen = () => {
       </div>
 
       {isLoading ? (
-        <LoadingState />
+        <LoadingScreen message="Buyurtmalar yuklanmoqda..." />
       ) : error ? (
-        <EmptyState title="Xatolik" text={error} />
+        <ErrorMessage message={error} onRetry={loadOrders} />
       ) : (
         content
       )}

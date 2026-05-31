@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { getTelegramIdentity, hapticSuccess, hapticTap, type TelegramUser } from '../lib/telegram';
 import { toUzbekErrorMessage } from '../lib/errors';
 import { useSafargoStore } from '../store/useSafargoStore';
-import { getRegionLabel } from '../data/locations';
+import { getRegionLabel, CAR_MODELS } from '../data/locations';
 import type { UserRole, UserLocation } from '../types/safargo';
 import { Button, Card, EmptyState, LoadingState, MissingLocationState, Pill, Toast } from '../components/ui';
 
@@ -12,8 +12,6 @@ type CurrentUser = {
   id: string;
   name: string;
 };
-
-const CAR_MODELS = ['Cobalt', 'Nexia 3', 'Gentra', 'Lacetti', 'Onix', 'Monza', 'Spark', 'Matiz', 'Damas', 'Boshqa'];
 
 type TelegramIdentity = {
   id: string;

@@ -103,6 +103,8 @@ export const PassengerScreen = ({ onGoHome }: { onGoHome: () => void }) => {
       )
       .subscribe();
 
+    useSafargoStore.getState().addChannel(channel);
+
     return () => {
       void supabase.removeChannel(channel);
     };
